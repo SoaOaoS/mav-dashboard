@@ -1,16 +1,15 @@
-# MAV — Command Interface
+# Mav
 
-Interface web de pilotage de **Mav**, l'agent IA. Style HUD/JARVIS : réacteur central,
-métriques système, console de commande, jobs, mémoire et veille.
+Interface web de **Mav**, ton compagnon IA. Simple et chaleureuse : on lui parle,
+il retient, il surveille et il agit en arrière-plan.
 
-> ⚠️ **Mode mock** — cette version est une démo statique déployée sur GitHub Pages.
-> Aucune donnée réelle, aucune authentification, aucune commande exécutée.
-> Le backend (agent, Postgres, actions réelles) sera branché plus tard.
+> ⚠️ **Mode mock** — démo statique sur GitHub Pages. Aucune donnée réelle,
+> aucune authentification, aucun backend branché. À terme : accès restreint par
+> VPN, branchement de l'agent réel.
 
 ## Stack
 
 - HTML / CSS / JS vanilla, zéro dépendance, zéro build.
-- Canvas 2D pour le réacteur animé.
 - Déploiement : GitHub Pages.
 
 ## Structure
@@ -23,13 +22,13 @@ métriques système, console de commande, jobs, mémoire et veille.
     └── js/app.js
 ```
 
-## Vues
+## Écrans
 
-- **Overview** — réacteur, métriques, jobs, flux, tâches actives.
-- **Console** — terminal simulé avec commandes (`aide`, `status`, `jobs`, `mémoire`, `veille`, `clear`).
-- **Jobs** — table des jobs planifiés.
-- **Mémoire** — timeline des échanges mémorisés.
-- **Veille** — items surveillés (web, mail, github, proxmox, health).
+- **Accueil** — salutation, barre de message, raccourcis, résumé du jour et automatisations.
+- **Discussions** — fil de chat continu avec réponses simulées et indicateur de frappe.
+- **Automatisations** — les tâches que Mav fait tout seul (planning, état).
+- **Souvenirs** — ce que Mav retient d'une conversation à l'autre.
+- **Surveillance** — ce que Mav surveille (web, mails, serveurs, santé), alerte seulement au changement.
 
 ## Lancer en local
 
@@ -40,7 +39,7 @@ python3 -m http.server 8080
 
 ## Prochaines étapes
 
-- [ ] Brancher l'API réelle de l'agent.
-- [ ] Auth / accès restreint (VPN).
-- [ ] Streaming des réponses de la console.
-- [ ] Thème et branding définitifs (couleurs, voix, nom).
+- [ ] Brancher l'agent réel (chat + actions).
+- [ ] Accès restreint par VPN.
+- [ ] Réponses en streaming.
+- [ ] Personnalisation finale (nom, ton, données).
