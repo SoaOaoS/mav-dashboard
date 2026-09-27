@@ -1,111 +1,115 @@
 /* ============================================================
-   Mav — companion UI (mock)
-   Données simulées, aucune auth, aucun backend branché.
+   Mav — companion UI
+   Mode LIVE : lit l'API réelle (/api/*) servie par mav_api.py.
+   Fallback MOCK automatique si l'API n'est pas joignable
+   (ex. ouverture statique sur GitHub Pages).
    ============================================================ */
 
+/* ---------- Données de secours (mock) ---------- */
 const MOCK = {
   connections: [
-    { name: "Proxmox", state: "ok", label: "connecté" },
+    { name: "Moteur opencode", state: "ok", label: "en ligne" },
     { name: "Base mémoire", state: "ok", label: "connectée" },
-    { name: "Gmail", state: "ok", label: "connecté" },
-    { name: "Spotify", state: "warn", label: "quota" },
-    { name: "Telegram", state: "ok", label: "connecté" },
-    { name: "Moodle", state: "off", label: "hors ligne" },
-  ],
-  today: [
-    { t: "09:00", text: "Point marchés envoyé." },
-    { t: "08:47", text: "3 notes réindexées dans la mémoire." },
-    { t: "08:00", text: "Revue du matin terminée, 2 choses à relire." },
-    { t: "07:59", text: "Sauvegarde de la VM OK." },
+    { name: "Telegram", state: "ok", label: "pont actif" },
   ],
   jobs: [
     {
       name: "Revue du matin",
-      desc: "Préparer le point technique avant 8h.",
+      description: "Point technique avant 8h.",
       time: "08:00",
-      days: "lun–ven",
+      days: ["mon", "tue", "wed", "thu", "fri"],
+      agent: "research",
       enabled: true,
-      icon: "heart",
     },
     {
       name: "Point marchés",
-      desc: "Synthèse macro et marchés pour l'ouverture.",
+      description: "Synthèse macro et marchés.",
       time: "09:00",
-      days: "lun–ven",
+      days: ["mon", "tue", "wed", "thu", "fri"],
+      agent: "research",
       enabled: true,
-      icon: "bolt",
-    },
-    {
-      name: "Veille infra",
-      desc: "Surveiller les serveurs et services toutes les 30 min.",
-      time: "continu",
-      days: "24/7",
-      enabled: true,
-      icon: "eye",
-    },
-    {
-      name: "Récap hebdo",
-      desc: "Résumé de la semaine dans la mémoire.",
-      time: "20:00",
-      days: "dim",
-      enabled: false,
-      icon: "chat",
     },
   ],
-  memory: [
-    {
-      date: "27 sept.",
-      text: "Tu préfères que je te prévienne quand un service est bloqué, plutôt que je tourne en rond.",
-      tag: "préférence",
-    },
-    {
-      date: "26 sept.",
-      text: "On a lancé la nouvelle interface web de Mav.",
-      tag: "projet",
-    },
-    {
-      date: "24 sept.",
-      text: "Le briefing marchés de 9h tourne bien.",
-      tag: "système",
-    },
-    {
-      date: "18 août",
-      text: "Note : docker a été installé, reconnexion nécessaire.",
-      tag: "infra",
-    },
+  today: [
+    { t: "09:00", text: "Point marchés envoyé." },
+    { t: "08:00", text: "Revue du matin terminée." },
   ],
-  watch: [
-    { type: "Web", target: "Le campus en ligne", state: "stable" },
-    { type: "GitHub", target: "mav-dashboard", state: "stable" },
-    { type: "Serveurs", target: "VM OPC sur GAIA", state: "stable" },
-    { type: "Santé", target: "Base mémoire + serveur", state: "stable" },
-    { type: "Mails", target: "Réservations", state: "changement" },
-  ],
+  memory: { conversations: [], facts: [], preferences: [] },
+  watch: { items: [] },
   replies: {
-    statut:
-      "Tout va bien de mon côté. Cinq services sur six sont en ligne — seul Moodle ne répond pas, et Spotify est en quota. Rien d'urgent.",
-    automatisations:
-      "Je fais tourner 3 automatisations en ce moment : la revue du matin à 8h, le point marchés à 9h, et la veille infra en continu. Tu veux en ajuster une ?",
-    souvenirs:
-      "Je retiens 4 choses en ce moment. La plus importante : tu préfères que je te prévienne vite plutôt que de tourner en rond. C'est noté.",
-    surveillance:
-      "Je surveille 5 choses pour toi. Une seule a bougé : tes mails de réservation. Le reste est stable, donc je me tais.",
-    marches:
-      "Ouverture européenne prudente ce matin, les indices prennent +0,3 %. Je te fais un vrai point si tu veux.",
-    aide: "Je peux te faire un point système, résumer tes automatisations, te dire ce que je retiens, ou te signaler des alertes. Mais tu peux surtout juste me parler naturellement.",
-    default: [
-      "Compris. Je m'en occupe et je te tiens au courant.",
-      "Bien noté — je regarde ça et je reviens vers toi.",
-      "D'accord. Je te prépare ça dans un instant.",
-      "Reçu. Je m'y mets, dis-moi juste si tu veux que je te montre le détail.",
-    ],
+    statut: "Tout va bien de mon côté.",
+    automatisations: "Voici tes automatisations.",
+    souvenirs: "Je retiens quelques choses.",
+    surveillance: "Je surveille plusieurs sources.",
+    default: ["Compris, je m'en occupe.", "Bien noté.", "D'accord."],
   },
 };
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-/* ---------- CLOCK ---------- */
+let LIVE = false;
+let STATUS = null;
+const api = {
+  async get(path) {
+    const r = await fetch(`/api/${path}`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!r.ok) throw new Error(r.status);
+    return r.json();
+  },
+  async post(path, body) {
+    const r = await fetch(`/api/${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(r.status);
+    return r.json();
+  },
+};
+
+/* ---------- Utilitaires ---------- */
+function fmtDays(days) {
+  if (!days || !days.length) return "";
+  const map = {
+    mon: "lun",
+    tue: "mar",
+    wed: "mer",
+    thu: "jeu",
+    fri: "ven",
+    sat: "sam",
+    sun: "dim",
+  };
+  const fr = days.map((d) => map[d] || d);
+  return fr.join("–");
+}
+function fmtDate(ts) {
+  if (!ts) return "";
+  const d = new Date(ts * 1000);
+  return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+}
+function fmtTime(ts) {
+  if (!ts) return "";
+  return new Date(ts * 1000).toLocaleTimeString("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = s == null ? "" : String(s);
+  return d.innerHTML;
+}
+function fmtUptime(s) {
+  if (!s) return "—";
+  const d = Math.floor(s / 86400),
+    h = Math.floor((s % 86400) / 3600),
+    m = Math.floor((s % 3600) / 60);
+  return d > 0 ? `${d}j ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+/* ---------- Horloge ---------- */
 function tick() {
   const n = new Date();
   $("#clock").textContent =
@@ -114,7 +118,7 @@ function tick() {
 setInterval(tick, 1000);
 tick();
 
-/* ---------- GREETING ---------- */
+/* ---------- Salutation ---------- */
 function greet() {
   const h = new Date().getHours();
   if (h < 6) return "Bonne nuit Raphaël";
@@ -123,19 +127,8 @@ function greet() {
   return "Bonsoir Raphaël";
 }
 $("#greeting").textContent = greet();
-const subs = [
-  "Content de te revoir. Qu'est-ce qu'on fait aujourd'hui ?",
-  "Tout est calme. Une seule petite chose à te signaler.",
-  "J'ai avancé sur tes automatisations ce matin.",
-  "Je suis là, dis-moi.",
-];
-let si = 0;
-setInterval(() => {
-  si = (si + 1) % subs.length;
-  $("#greetingSub").textContent = subs[si];
-}, 8000);
 
-/* ---------- NAV ---------- */
+/* ---------- Navigation ---------- */
 function go(view) {
   $$(".nav-item").forEach((b) =>
     b.classList.toggle("is-active", b.dataset.view === view),
@@ -152,95 +145,130 @@ $$("[data-goto]").forEach((b) =>
   b.addEventListener("click", () => go(b.dataset.goto)),
 );
 
-/* ---------- CONNECTIONS ---------- */
-$("#connList").innerHTML = MOCK.connections
-  .map(
-    (c) => `
-  <li><span class="st ${c.state}"></span>${c.name}<span class="lbl">${c.label}</span></li>
-`,
-  )
-  .join("");
+/* ---------- Rendu ---------- */
+function renderStatus(st) {
+  STATUS = st;
+  if (!st) return;
+  const online = st.agent_online;
+  $("#greetingSub").textContent = online
+    ? "Je suis en ligne. Tout est calme de mon côté."
+    : "Mon moteur ne répond pas pour l'instant.";
 
-/* ---------- STATS ---------- */
-$("#stats").innerHTML = [
-  { v: "3", k: "automatisations actives" },
-  { v: "4", k: "choses retenues" },
-  { v: "5", k: "surveillances" },
-  { v: "1", k: "alerte douce" },
-]
-  .map(
-    (s) =>
-      `<div class="stat"><div class="v">${s.v}</div><div class="k">${s.k}</div></div>`,
-  )
-  .join("");
+  $("#stats").innerHTML = [
+    { v: st.jobs_active ?? "—", k: "automatisations actives" },
+    { v: st.conversations ?? "—", k: "échanges en mémoire" },
+    { v: st.facts ?? "—", k: "faits retenus" },
+    { v: st.watch_items ?? "—", k: "surveillances" },
+  ]
+    .map(
+      (s) =>
+        `<div class="stat"><div class="v">${esc(s.v)}</div><div class="k">${esc(s.k)}</div></div>`,
+    )
+    .join("");
+}
 
-/* ---------- TODAY ---------- */
-$("#today").innerHTML = MOCK.today
-  .map(
-    (t) => `
-  <li><span class="t">${t.t}</span><span>${t.text}</span></li>
-`,
-  )
-  .join("");
+function renderConnections(list) {
+  $("#connList").innerHTML = list
+    .map(
+      (c) =>
+        `<li><span class="st ${esc(c.state)}"></span>${esc(c.name)}<span class="lbl">${esc(c.label)}</span></li>`,
+    )
+    .join("");
+}
 
-/* ---------- JOBS (home mini + list) ---------- */
-$("#homeJobs").innerHTML = MOCK.jobs
-  .slice(0, 3)
-  .map(
-    (j) => `
-  <li>
-    <span class="jname">${j.name}</span>
-    <span class="jwhen">${j.time}</span>
-    <span class="pill ${j.enabled ? "on" : "off"}">${j.enabled ? "actif" : "pause"}</span>
-  </li>
-`,
-  )
-  .join("");
+function renderToday(items) {
+  $("#today").innerHTML = (items || [])
+    .map(
+      (t) =>
+        `<li><span class="t">${esc(t.t)}</span><span>${esc(t.text)}</span></li>`,
+    )
+    .join("");
+}
 
-$("#jobsList").innerHTML = MOCK.jobs
-  .map(
-    (j) => `
-  <div class="job">
-    <div class="jicon"><span class="nav-ico" data-ico="${j.icon}"></span></div>
-    <div>
-      <div class="jtitle">${j.name}</div>
-      <div class="jdesc">${j.desc}</div>
-    </div>
-    <div class="jtime">${j.time}<small>${j.days} · ${j.enabled ? "active" : "en pause"}</small></div>
-  </div>
-`,
-  )
-  .join("");
-$("#navJobsCount").textContent = MOCK.jobs.filter((j) => j.enabled).length;
+function renderMiniJobs(jobs) {
+  $("#homeJobs").innerHTML = (jobs || [])
+    .slice(0, 3)
+    .map(
+      (j) => `
+    <li>
+      <span class="jname">${esc(j.name)}</span>
+      <span class="jwhen">${esc(j.time)}</span>
+      <span class="pill ${j.enabled ? "on" : "off"}">${j.enabled ? "actif" : "pause"}</span>
+    </li>`,
+    )
+    .join("");
+}
 
-/* ---------- MEMORY ---------- */
-$("#memoryList").innerHTML = MOCK.memory
-  .map(
-    (m) => `
-  <li>
-    <div class="mdate">${m.date}</div>
-    <div><div class="mtext">${m.text}</div><span class="mtag">${m.tag}</span></div>
-  </li>
-`,
-  )
-  .join("");
+function renderJobs(jobs) {
+  $("#jobsList").innerHTML = (jobs || [])
+    .map(
+      (j) => `
+    <div class="job">
+      <div class="jicon"><span class="nav-ico" data-ico="bolt"></span></div>
+      <div>
+        <div class="jtitle">${esc(j.name)}</div>
+        <div class="jdesc">${esc(j.description || "")}${j.agent ? ` · agent ${esc(j.agent)}` : ""}</div>
+      </div>
+      <div class="jtime">${esc(j.time)}<small>${esc(fmtDays(j.days))} · ${j.enabled ? "active" : "en pause"}</small></div>
+    </div>`,
+    )
+    .join("");
+  const active = (jobs || []).filter((j) => j.enabled).length;
+  $("#navJobsCount").textContent = active;
+}
 
-/* ---------- WATCH ---------- */
-$("#watchList").innerHTML = MOCK.watch
-  .map(
-    (w) => `
-  <div class="wcard">
-    <div class="wtype">${w.type}</div>
-    <div class="wtarget">${w.target}</div>
-    <div class="wstate ${w.state === "changement" ? "changed" : ""}">
-      <span class="st"></span>${w.state === "changement" ? "a changé" : "stable"}
-    </div>
-  </div>
-`,
-  )
-  .join("");
+function renderMemory(mem) {
+  const rows = [];
+  (mem.conversations || []).forEach((c) => {
+    rows.push({ date: fmtTime(c.ts), text: c.question, tag: "échange" });
+  });
+  (mem.facts || []).forEach((f) => {
+    rows.push({ date: fmtDate(f.ts), text: f.fact, tag: "fait" });
+  });
+  (mem.preferences || []).forEach((p) => {
+    rows.push({
+      date: fmtDate(p.ts),
+      text: `${p.key} : ${p.value}`,
+      tag: "préférence",
+    });
+  });
+  if (!rows.length) {
+    $("#memoryList").innerHTML =
+      `<li><div class="mdate"></div><div class="mtext" style="color:var(--ink-3)">Rien en mémoire pour l'instant.</div></li>`;
+    return;
+  }
+  $("#memoryList").innerHTML = rows
+    .map(
+      (m) => `
+    <li>
+      <div class="mdate">${esc(m.date)}</div>
+      <div><div class="mtext">${esc(m.text)}</div><span class="mtag">${esc(m.tag)}</span></div>
+    </li>`,
+    )
+    .join("");
+}
 
-/* ---------- CHAT ---------- */
+function renderWatch(watch) {
+  const items = (watch && watch.items) || [];
+  if (!items.length) {
+    $("#watchList").innerHTML =
+      `<div class="wcard"><div class="wtype">Veille</div><div class="wtarget">Aucune surveillance active</div><div class="wstate"><span class="st"></span>en veille</div></div>`;
+    return;
+  }
+  $("#watchList").innerHTML = items
+    .map((w) => {
+      const changed = w.last_state && /chang|new|alert/i.test(w.last_state);
+      return `
+    <div class="wcard">
+      <div class="wtype">${esc(w.kind)}</div>
+      <div class="wtarget">${esc(w.target)}</div>
+      <div class="wstate ${changed ? "changed" : ""}"><span class="st"></span>${changed ? "a changé" : "stable"}${w.last_checked ? ` · ${esc(fmtTime(w.last_checked))}` : ""}</div>
+    </div>`;
+    })
+    .join("");
+}
+
+/* ---------- Chat ---------- */
 const messages = $("#messages");
 function addMsg(text, who) {
   const el = document.createElement("div");
@@ -255,48 +283,55 @@ function addMsg(text, who) {
   return el;
 }
 
-// message d'accueil
-addMsg(
-  "Salut Raphaël. Je suis prêt — dis-moi ce dont tu as besoin, ou tape une suggestion.",
-  "mav",
-);
+addMsg("Salut Raphaël. Je suis prêt — dis-moi ce dont tu as besoin.", "mav");
 
-function reply(cmd, raw) {
-  const key = (cmd || raw || "").trim().toLowerCase();
-  let text;
-  if (MOCK.replies[key]) text = MOCK.replies[key];
-  else if (/^(aide|help|\?)$/.test(key)) text = MOCK.replies.aide;
-  else {
-    const pool = MOCK.replies.default;
-    text = pool[Math.floor(Math.random() * pool.length)];
-  }
+async function send(raw, cmd) {
+  const text = (raw || "").trim();
+  if (!text && !cmd) return;
+  const shown = text || cmd;
+  addMsg(shown, "me");
+
   const typing = $("#typing");
   typing.hidden = false;
   messages.scrollTop = messages.scrollHeight;
+
+  if (LIVE) {
+    try {
+      const res = await api.post("ask", { prompt: text || cmd });
+      typing.hidden = true;
+      addMsg(res.answer || "…", "mav");
+      return;
+    } catch (e) {
+      typing.hidden = true;
+      addMsg(
+        "Je n'ai pas réussi à joindre mon moteur. Réessaie dans un instant.",
+        "mav",
+      );
+      return;
+    }
+  }
+
+  // Mode mock
+  const key = (cmd || text || "").trim().toLowerCase();
+  const pool = MOCK.replies[key] || MOCK.replies.default;
+  const reply = Array.isArray(pool)
+    ? pool[Math.floor(Math.random() * pool.length)]
+    : pool;
   setTimeout(
     () => {
       typing.hidden = true;
-      addMsg(text, "mav");
+      addMsg(reply, "mav");
     },
     700 + Math.random() * 500,
   );
 }
 
-function send(raw, cmd) {
-  const text = (raw || "").trim();
-  if (!text && !cmd) return;
-  if (text) addMsg(text, "me");
-  reply(cmd, text);
-}
-
-// chat
 $("#chatForm").addEventListener("submit", (e) => {
   e.preventDefault();
   const i = $("#chatInput");
   send(i.value);
   i.value = "";
 });
-// hero
 $("#heroForm").addEventListener("submit", (e) => {
   e.preventDefault();
   const i = $("#heroInput");
@@ -304,7 +339,6 @@ $("#heroForm").addEventListener("submit", (e) => {
   i.value = "";
   go("chat");
 });
-// chips
 $$(".chip").forEach((c) =>
   c.addEventListener("click", () => {
     go("chat");
@@ -312,21 +346,50 @@ $$(".chip").forEach((c) =>
   }),
 );
 
-/* ---------- LIVE TOUCH ---------- */
-const liveTexts = [
-  "Sauvegarde horaire terminée.",
-  "Mémoire rafraîchie.",
-  "Rien à signaler sur tes surveillances.",
-  "Petit check des services… tout est bon.",
-];
-setInterval(() => {
-  const n = new Date();
-  MOCK.today.unshift({
-    t: `${String(n.getHours()).padStart(2, "0")}:${String(n.getMinutes()).padStart(2, "0")}`,
-    text: liveTexts[Math.floor(Math.random() * liveTexts.length)],
-  });
-  MOCK.today.pop();
-  $("#today").innerHTML = MOCK.today
-    .map((t) => `<li><span class="t">${t.t}</span><span>${t.text}</span></li>`)
-    .join("");
-}, 9000);
+/* ---------- Chargement ---------- */
+async function loadLive() {
+  try {
+    const [status, conns, jobs, mem, watch] = await Promise.all([
+      api.get("status"),
+      api.get("connections"),
+      api.get("jobs"),
+      api.get("memory"),
+      api.get("watch"),
+    ]);
+    LIVE = true;
+    document.body.dataset.mode = "live";
+    renderStatus(status);
+    renderConnections(conns.connections || []);
+    renderJobs(jobs.jobs || []);
+    renderMiniJobs(jobs.jobs || []);
+    renderMemory(mem);
+    renderWatch(watch);
+    renderToday([{ t: "—", text: "Connecté au moteur de l'agent en direct." }]);
+  } catch (e) {
+    LIVE = false;
+    document.body.dataset.mode = "mock";
+    renderStatus({
+      agent_online: false,
+      jobs_active: MOCK.jobs.filter((j) => j.enabled).length,
+      conversations: "—",
+      facts: "—",
+      watch_items: "—",
+    });
+    renderConnections(MOCK.connections);
+    renderJobs(MOCK.jobs);
+    renderMiniJobs(MOCK.jobs);
+    renderMemory(MOCK.memory);
+    renderWatch(MOCK.watch);
+    renderToday(MOCK.today);
+  }
+}
+loadLive();
+
+/* Rafraîchit le statut en direct */
+setInterval(async () => {
+  if (!LIVE) return;
+  try {
+    const st = await api.get("status");
+    renderStatus(st);
+  } catch (_) {}
+}, 15000);
