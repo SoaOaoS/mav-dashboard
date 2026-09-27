@@ -1,345 +1,332 @@
 /* ============================================================
-   MAV COMMAND INTERFACE — mock data + UI logic
-   Aucune authentification. Données simulées (démo GitHub Pages).
+   Mav — companion UI (mock)
+   Données simulées, aucune auth, aucun backend branché.
    ============================================================ */
 
 const MOCK = {
-  jobs: [
-    { name: "revue-dev-matinale", time: "08:00", days: "Lun–Ven", agent: "dev", enabled: true },
-    { name: "briefing-marches-9h", time: "09:00", days: "Lun–Ven", agent: "finance", enabled: true },
-    { name: "veille-infra", time: "*/30 min", days: "24/7", agent: "ops", enabled: true },
-    { name: "revue-memoire-hebdo", time: "Dim 20:00", days: "Dim", agent: "writer", enabled: false },
+  connections: [
+    { name: "Proxmox", state: "ok", label: "connecté" },
+    { name: "Base mémoire", state: "ok", label: "connectée" },
+    { name: "Gmail", state: "ok", label: "connecté" },
+    { name: "Spotify", state: "warn", label: "quota" },
+    { name: "Telegram", state: "ok", label: "connecté" },
+    { name: "Moodle", state: "off", label: "hors ligne" },
   ],
-  tasks: [
-    { title: "Indexation RAG des notes", progress: 68, agent: "dev", eta: "12 min" },
-    { title: "Synthèse marchés ouverture", progress: 31, agent: "finance", eta: "—" },
-    { title: "Scan PRs ouvertes", progress: 100, agent: "reviewer", eta: "terminé" },
-    { title: "Backup VM OPC", progress: 84, agent: "ops", eta: "4 min" },
+  today: [
+    { t: "09:00", text: "Point marchés envoyé." },
+    { t: "08:47", text: "3 notes réindexées dans la mémoire." },
+    { t: "08:00", text: "Revue du matin terminée, 2 choses à relire." },
+    { t: "07:59", text: "Sauvegarde de la VM OK." },
+  ],
+  jobs: [
+    {
+      name: "Revue du matin",
+      desc: "Préparer le point technique avant 8h.",
+      time: "08:00",
+      days: "lun–ven",
+      enabled: true,
+      icon: "heart",
+    },
+    {
+      name: "Point marchés",
+      desc: "Synthèse macro et marchés pour l'ouverture.",
+      time: "09:00",
+      days: "lun–ven",
+      enabled: true,
+      icon: "bolt",
+    },
+    {
+      name: "Veille infra",
+      desc: "Surveiller les serveurs et services toutes les 30 min.",
+      time: "continu",
+      days: "24/7",
+      enabled: true,
+      icon: "eye",
+    },
+    {
+      name: "Récap hebdo",
+      desc: "Résumé de la semaine dans la mémoire.",
+      time: "20:00",
+      days: "dim",
+      enabled: false,
+      icon: "chat",
+    },
   ],
   memory: [
-    { date: "27 sep. 2026", text: "Raphaël préfère être prévenu d'un quota excédé plutôt qu'une boucle de retry.", tag: "préférence" },
-    { date: "26 sep. 2026", text: "Déploiement du dashboard MAV sur GitHub Pages (mode mock).", tag: "projet" },
-    { date: "24 sep. 2026", text: "Job briefing-marches-9h opérationnel via Stocktwits temps réel.", tag: "système" },
-    { date: "18 août 2026", text: "Le groupe docker a été ajouté à opencode — reconnexion requise.", tag: "infra" },
+    {
+      date: "27 sept.",
+      text: "Tu préfères que je te prévienne quand un service est bloqué, plutôt que je tourne en rond.",
+      tag: "préférence",
+    },
+    {
+      date: "26 sept.",
+      text: "On a lancé la nouvelle interface web de Mav.",
+      tag: "projet",
+    },
+    {
+      date: "24 sept.",
+      text: "Le briefing marchés de 9h tourne bien.",
+      tag: "système",
+    },
+    {
+      date: "18 août",
+      text: "Note : docker a été installé, reconnexion nécessaire.",
+      tag: "infra",
+    },
   ],
   watch: [
-    { type: "web", target: "mines-ales.fr / campus", state: "stable" },
-    { type: "github", target: "SoaOaoS/mav-dashboard", state: "stable" },
-    { type: "proxmox", target: "GAIA · VM 113 (OPC)", state: "stable" },
-    { type: "health", target: "Postgres + serveur opencode", state: "stable" },
-    { type: "mail", target: "gmail / réservations", state: "changement" },
+    { type: "Web", target: "Le campus en ligne", state: "stable" },
+    { type: "GitHub", target: "mav-dashboard", state: "stable" },
+    { type: "Serveurs", target: "VM OPC sur GAIA", state: "stable" },
+    { type: "Santé", target: "Base mémoire + serveur", state: "stable" },
+    { type: "Mails", target: "Réservations", state: "changement" },
   ],
-  feed: [
-    { t: "09:00", text: "Briefing marchés envoyé sur Telegram." },
-    { t: "08:47", text: "RAG : 3 documents réindexés." },
-    { t: "08:00", text: "revue-dev-matinale terminée — 2 PRs à relire." },
-    { t: "07:59", text: "Backup nocturne VM OPC OK." },
-    { t: "07:30", text: "Connexion Spotify : quota excédé (search)." },
-  ],
-  connections: [
-    { name: "Proxmox · GAIA", state: "ok" },
-    { name: "Postgres · mav", state: "ok" },
-    { name: "Gmail · IMAP", state: "ok" },
-    { name: "Spotify · quota", state: "warn" },
-    { name: "Telegram bot", state: "ok" },
-    { name: "Moodle · MCP", state: "err" },
-  ],
+  replies: {
+    statut:
+      "Tout va bien de mon côté. Cinq services sur six sont en ligne — seul Moodle ne répond pas, et Spotify est en quota. Rien d'urgent.",
+    automatisations:
+      "Je fais tourner 3 automatisations en ce moment : la revue du matin à 8h, le point marchés à 9h, et la veille infra en continu. Tu veux en ajuster une ?",
+    souvenirs:
+      "Je retiens 4 choses en ce moment. La plus importante : tu préfères que je te prévienne vite plutôt que de tourner en rond. C'est noté.",
+    surveillance:
+      "Je surveille 5 choses pour toi. Une seule a bougé : tes mails de réservation. Le reste est stable, donc je me tais.",
+    marches:
+      "Ouverture européenne prudente ce matin, les indices prennent +0,3 %. Je te fais un vrai point si tu veux.",
+    aide: "Je peux te faire un point système, résumer tes automatisations, te dire ce que je retiens, ou te signaler des alertes. Mais tu peux surtout juste me parler naturellement.",
+    default: [
+      "Compris. Je m'en occupe et je te tiens au courant.",
+      "Bien noté — je regarde ça et je reviens vers toi.",
+      "D'accord. Je te prépare ça dans un instant.",
+      "Reçu. Je m'y mets, dis-moi juste si tu veux que je te montre le détail.",
+    ],
+  },
 };
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-/* ---------- CLOCK + UPTIME ---------- */
-const boot = Date.now();
-function two(n) { return String(n).padStart(2, "0"); }
-function tickClock() {
-  const now = new Date();
-  const t = `${two(now.getHours())}:${two(now.getMinutes())}:${two(now.getSeconds())}`;
-  $("#clock").textContent = t;
-  $("#clockBig").textContent = t;
-  $("#clockDate").textContent = now.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-  const up = Math.floor((Date.now() - boot) / 1000);
-  const d = Math.floor(up / 86400), h = Math.floor((up % 86400) / 3600), m = Math.floor((up % 3600) / 60);
-  $("#uptime").textContent = `${two(d)}j ${two(h)}h ${two(m)}m`;
+/* ---------- CLOCK ---------- */
+function tick() {
+  const n = new Date();
+  $("#clock").textContent =
+    `${String(n.getHours()).padStart(2, "0")}:${String(n.getMinutes()).padStart(2, "0")}`;
 }
-setInterval(tickClock, 1000); tickClock();
-$("#year").textContent = new Date().getFullYear();
+setInterval(tick, 1000);
+tick();
 
-/* ---------- NAV ---------- */
-$$(".nav-btn").forEach(btn => {
-  btn.addEventListener("click", () => {
-    $$(".nav-btn").forEach(b => b.classList.toggle("is-active", b === btn));
-    const v = btn.dataset.view;
-    $$(".view").forEach(el => el.classList.toggle("is-active", el.id === `view-${v}`));
-  });
-});
-function goView(v) {
-  const btn = $(`.nav-btn[data-view="${v}"]`);
-  if (btn) btn.click();
+/* ---------- GREETING ---------- */
+function greet() {
+  const h = new Date().getHours();
+  if (h < 6) return "Bonne nuit Raphaël";
+  if (h < 12) return "Bonjour Raphaël";
+  if (h < 18) return "Bon après-midi Raphaël";
+  return "Bonsoir Raphaël";
 }
-
-/* ---------- REACTOR CANVAS ---------- */
-(function reactor() {
-  const cv = $("#reactor");
-  if (!cv) return;
-  const ctx = cv.getContext("2d");
-  const cx = 130, cy = 130;
-  let load = 0.42, target = 0.42, t = 0;
-  const bars = Array.from({ length: 64 }, () => Math.random());
-
-  function draw() {
-    t += 0.02;
-    load += (target - load) * 0.04;
-    ctx.clearRect(0, 0, 260, 260);
-
-    // halo
-    const g = ctx.createRadialGradient(cx, cy, 10, cx, cy, 120);
-    g.addColorStop(0, "rgba(69,230,255,0.20)");
-    g.addColorStop(1, "rgba(69,230,255,0)");
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(cx, cy, 120, 0, Math.PI * 2); ctx.fill();
-
-    // outer rotating ring
-    ctx.save(); ctx.translate(cx, cy); ctx.rotate(t * 0.5); ctx.translate(-cx, -cy);
-    ctx.strokeStyle = "rgba(69,230,255,0.55)"; ctx.lineWidth = 1.5;
-    for (let i = 0; i < 48; i++) {
-      const a = (i / 48) * Math.PI * 2;
-      const r1 = 108, r2 = r1 + (i % 4 === 0 ? 10 : 5);
-      ctx.beginPath();
-      ctx.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
-      ctx.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2);
-      ctx.stroke();
-    }
-    ctx.restore();
-
-    // mid ring
-    ctx.strokeStyle = "rgba(69,230,255,0.28)"; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(cx, cy, 92, 0, Math.PI * 2); ctx.stroke();
-
-    // progress arc
-    ctx.strokeStyle = "#45e6ff"; ctx.lineWidth = 4; ctx.lineCap = "round";
-    ctx.shadowColor = "#45e6ff"; ctx.shadowBlur = 14;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 92, -Math.PI / 2, -Math.PI / 2 + load * Math.PI * 2);
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-
-    // inner ring
-    ctx.strokeStyle = "rgba(69,230,255,0.18)"; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(cx, cy, 74, 0, Math.PI * 2); ctx.stroke();
-
-    // equalizer
-    ctx.save(); ctx.translate(cx, cy); ctx.rotate(-t * 0.7);
-    for (let i = 0; i < 64; i++) {
-      const a = (i / 64) * Math.PI * 2;
-      const amp = 6 + bars[i] * 22 * load;
-      bars[i] += (Math.random() - 0.5) * 0.12;
-      bars[i] = Math.max(0, Math.min(1, bars[i]));
-      ctx.strokeStyle = `rgba(69,230,255,${0.25 + bars[i] * 0.5})`;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(Math.cos(a) * 74, Math.sin(a) * 74);
-      ctx.lineTo(Math.cos(a) * (74 - amp), Math.sin(a) * (74 - amp));
-      ctx.stroke();
-    }
-    ctx.restore();
-
-    requestAnimationFrame(draw);
-  }
-  draw();
-
-  // live load fluctuation
-  setInterval(() => {
-    target = 0.25 + Math.random() * 0.55;
-    $("#coreLoad").textContent = Math.round(load * 100);
-  }, 1800);
-  setInterval(() => { $("#coreLoad").textContent = Math.round(load * 100); }, 200);
-})();
-
-/* ---------- METRICS ---------- */
-const metricState = { cpu: 34, mem: 58, disk: 47, net: 22 };
-function renderMetrics() {
-  const set = (id, bar, val, text) => {
-    $(id).textContent = text;
-    $(bar).style.width = Math.min(100, val) + "%";
-  };
-  set("#cpuVal", "#cpuBar", metricState.cpu, metricState.cpu + "%");
-  set("#memVal", "#memBar", metricState.mem, metricState.mem + "%");
-  set("#diskVal", "#diskBar", metricState.disk, metricState.disk + "%");
-  set("#netVal", "#netBar", metricState.net, metricState.net + " Mb/s");
-}
-setInterval(() => {
-  metricState.cpu = clamp(metricState.cpu + rnd(-6, 6), 8, 92);
-  metricState.mem = clamp(metricState.mem + rnd(-3, 3), 30, 88);
-  metricState.disk = clamp(metricState.disk + rnd(-1, 1), 40, 60);
-  metricState.net = clamp(metricState.net + rnd(-8, 10), 2, 96);
-  renderMetrics();
-}, 2000);
-renderMetrics();
-
-function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
-function rnd(a, b) { return a + Math.random() * (b - a); }
-
-/* ---------- RENDER LISTS ---------- */
-function renderOverviewJobs() {
-  $("#overviewJobs").innerHTML = MOCK.jobs.map(j => `
-    <li>
-      <span class="job-time">${j.time}</span>
-      <span class="job-name">${j.name}</span>
-      <span class="job-state ${j.enabled ? "state-on" : "state-off"}">${j.enabled ? "ON" : "OFF"}</span>
-    </li>`).join("");
-}
-function renderFeed() {
-  $("#overviewFeed").innerHTML = MOCK.feed.map(f => `<li><span class="t">${f.t}</span><span>${f.text}</span></li>`).join("");
-}
-function renderTasks() {
-  $("#taskGrid").innerHTML = MOCK.tasks.map(t => `
-    <div class="task-card">
-      <h4>${t.title}</h4>
-      <div class="task-progress"><i style="width:${t.progress}%"></i></div>
-      <div class="task-meta"><span>${t.agent}</span><span>${t.eta}</span></div>
-    </div>`).join("");
-}
-function renderJobsTable() {
-  const nextTimes = ["08:00", "09:00", "dans 12 min", "Dim 20:00"];
-  $(".data-table tbody").innerHTML = MOCK.jobs.map((j, i) => `
-    <tr>
-      <td>${j.name}</td>
-      <td class="mono">${j.time} · ${j.days}</td>
-      <td>${j.agent}</td>
-      <td><span class="badge ${j.enabled ? "badge-on" : "badge-off"}">${j.enabled ? "actif" : "inactif"}</span></td>
-      <td class="mono">${nextTimes[i]}</td>
-    </tr>`).join("");
-}
-function renderMemory() {
-  $("#memoryTimeline").innerHTML = MOCK.memory.map(m => `
-    <div class="mem-item">
-      <div class="mem-date">${m.date}</div>
-      <div><div class="mem-text">${m.text}</div><span class="mem-tag">${m.tag}</span></div>
-    </div>`).join("");
-}
-function renderWatch() {
-  $("#watchGrid").innerHTML = MOCK.watch.map(w => `
-    <div class="watch-card">
-      <div class="watch-type">${w.type}</div>
-      <div class="watch-target">${w.target}</div>
-      <div class="watch-state ${w.state === "changement" ? "changed" : ""}">${w.state === "changement" ? "▲ changement détecté" : "● stable"}</div>
-    </div>`).join("");
-}
-function renderLiveFeed() {
-  $("#liveFeed").innerHTML = MOCK.feed.map(f => `<li><span class="t">${f.t}</span><span>${f.text}</span></li>`).join("");
-}
-
-renderOverviewJobs();
-renderFeed();
-renderTasks();
-renderJobsTable();
-renderMemory();
-renderWatch();
-renderLiveFeed();
-
-/* ---------- LIVE FEED SIMULATION ---------- */
-const rndEvents = [
-  "Heartbeat MCP Proxmox reçu.",
-  "Cache RAG rafraîchi (4 entrées).",
-  "Aucun incident sur la veille mail.",
-  "Job scheduler : tick à l'instant.",
-  "Connexion Telegram stable.",
-  "Snapshot horaire Postgres OK.",
-];
-setInterval(() => {
-  const now = new Date();
-  const t = `${two(now.getHours())}:${two(now.getMinutes())}`;
-  MOCK.feed.unshift({ t, text: rndEvents[Math.floor(Math.random() * rndEvents.length)] });
-  MOCK.feed.pop();
-  renderLiveFeed();
-}, 6000);
-
-/* ---------- CONSOLE ---------- */
-const terminal = $("#terminal");
-function print(text, cls = "out") {
-  const l = document.createElement("div");
-  l.className = `line ${cls}`;
-  l.textContent = text;
-  terminal.appendChild(l);
-  terminal.scrollTop = terminal.scrollHeight;
-  // trim
-  while (terminal.children.length > 220) terminal.removeChild(terminal.firstChild);
-}
-const bootLines = [
-  ["Initialisation du noyau MAV…", "comment"],
-  ["Chargement mémoire inter-sessions… OK", "ok"],
-  ["Connexion Postgres mav@127.0.0.1… OK", "ok"],
-  ["Index RAG chargé (config french).", "ok"],
-  ["Mode MOCK — aucune commande n'est réellement exécutée.", "sys"],
-  ["Tape `aide` pour la liste des commandes.", "comment"],
-];
-bootLines.forEach((l, i) => setTimeout(() => print(l[0], l[1]), 220 * i));
-
-const HELP = [
-  "Commandes disponibles (mock) :",
-  "  status        — état complet du système",
-  "  jobs          — jobs planifiés",
-  "  memoire       — derniers échanges mémorisés",
-  "  veille        — items surveillés",
-  "  marches       — briefing marchés",
-  "  aide          — cette aide",
-  "  clear         — nettoyer la console",
-];
-
-function handleCommand(cmd) {
-  const c = cmd.trim().toLowerCase();
-  if (!c) return;
-  print(cmd, "in");
-  switch (c) {
-    case "aide":
-    case "help":
-      HELP.forEach(l => print(l, "comment"));
-      break;
-    case "status":
-      print("Système nominal. CPU 34% · MEM 58% · DISK 47%.", "ok");
-      print("Services : proxmox OK · postgres OK · gmail OK · spotify QUOTA · moodle ERR", "out");
-      break;
-    case "jobs":
-      MOCK.jobs.forEach(j => print(`  [${j.enabled ? "x" : " "}] ${j.time.padEnd(8)} ${j.name} (${j.agent})`, j.enabled ? "ok" : "comment"));
-      break;
-    case "memoire":
-    case "mémoire":
-      MOCK.memory.forEach(m => print(`  ${m.date} — ${m.text}`, "out"));
-      break;
-    case "veille":
-      MOCK.watch.forEach(w => print(`  [${w.type}] ${w.target} → ${w.state}`, w.state === "stable" ? "ok" : "sys"));
-      break;
-    case "marches":
-    case "marchés":
-      print("Briefing marchés (mock) : ouverture européenne prudente, indices +0.3%.", "out");
-      break;
-    case "clear":
-      terminal.innerHTML = "";
-      break;
-    default:
-      print(`Commande inconnue : « ${cmd} ». Tape \`aide\`.`, "err");
-  }
-}
-
-$("#consoleForm").addEventListener("submit", e => {
-  e.preventDefault();
-  const input = $("#consoleInput");
-  handleCommand(input.value);
-  input.value = "";
-});
-$$(".hint").forEach(h => h.addEventListener("click", () => handleCommand(h.dataset.cmd)));
-$$(".quick").forEach(q => q.addEventListener("click", () => {
-  handleCommand(q.dataset.cmd);
-  goView("console");
-}));
-
-/* greeting rotatif */
+$("#greeting").textContent = greet();
 const subs = [
-  "Tous les systèmes sont nominaux. Que puis-je faire ?",
-  "2 jobs exécutés ce matin. Rien à signaler.",
-  "La veille mail a détecté un changement.",
-  "Prêt à recevoir tes commandes.",
+  "Content de te revoir. Qu'est-ce qu'on fait aujourd'hui ?",
+  "Tout est calme. Une seule petite chose à te signaler.",
+  "J'ai avancé sur tes automatisations ce matin.",
+  "Je suis là, dis-moi.",
 ];
 let si = 0;
-setInterval(() => { si = (si + 1) % subs.length; $("#greetingSub").textContent = subs[si]; }, 7000);
+setInterval(() => {
+  si = (si + 1) % subs.length;
+  $("#greetingSub").textContent = subs[si];
+}, 8000);
+
+/* ---------- NAV ---------- */
+function go(view) {
+  $$(".nav-item").forEach((b) =>
+    b.classList.toggle("is-active", b.dataset.view === view),
+  );
+  $$(".view").forEach((v) =>
+    v.classList.toggle("is-active", v.id === `view-${view}`),
+  );
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+$$(".nav-item").forEach((b) =>
+  b.addEventListener("click", () => go(b.dataset.view)),
+);
+$$("[data-goto]").forEach((b) =>
+  b.addEventListener("click", () => go(b.dataset.goto)),
+);
+
+/* ---------- CONNECTIONS ---------- */
+$("#connList").innerHTML = MOCK.connections
+  .map(
+    (c) => `
+  <li><span class="st ${c.state}"></span>${c.name}<span class="lbl">${c.label}</span></li>
+`,
+  )
+  .join("");
+
+/* ---------- STATS ---------- */
+$("#stats").innerHTML = [
+  { v: "3", k: "automatisations actives" },
+  { v: "4", k: "choses retenues" },
+  { v: "5", k: "surveillances" },
+  { v: "1", k: "alerte douce" },
+]
+  .map(
+    (s) =>
+      `<div class="stat"><div class="v">${s.v}</div><div class="k">${s.k}</div></div>`,
+  )
+  .join("");
+
+/* ---------- TODAY ---------- */
+$("#today").innerHTML = MOCK.today
+  .map(
+    (t) => `
+  <li><span class="t">${t.t}</span><span>${t.text}</span></li>
+`,
+  )
+  .join("");
+
+/* ---------- JOBS (home mini + list) ---------- */
+$("#homeJobs").innerHTML = MOCK.jobs
+  .slice(0, 3)
+  .map(
+    (j) => `
+  <li>
+    <span class="jname">${j.name}</span>
+    <span class="jwhen">${j.time}</span>
+    <span class="pill ${j.enabled ? "on" : "off"}">${j.enabled ? "actif" : "pause"}</span>
+  </li>
+`,
+  )
+  .join("");
+
+$("#jobsList").innerHTML = MOCK.jobs
+  .map(
+    (j) => `
+  <div class="job">
+    <div class="jicon"><span class="nav-ico" data-ico="${j.icon}"></span></div>
+    <div>
+      <div class="jtitle">${j.name}</div>
+      <div class="jdesc">${j.desc}</div>
+    </div>
+    <div class="jtime">${j.time}<small>${j.days} · ${j.enabled ? "active" : "en pause"}</small></div>
+  </div>
+`,
+  )
+  .join("");
+$("#navJobsCount").textContent = MOCK.jobs.filter((j) => j.enabled).length;
+
+/* ---------- MEMORY ---------- */
+$("#memoryList").innerHTML = MOCK.memory
+  .map(
+    (m) => `
+  <li>
+    <div class="mdate">${m.date}</div>
+    <div><div class="mtext">${m.text}</div><span class="mtag">${m.tag}</span></div>
+  </li>
+`,
+  )
+  .join("");
+
+/* ---------- WATCH ---------- */
+$("#watchList").innerHTML = MOCK.watch
+  .map(
+    (w) => `
+  <div class="wcard">
+    <div class="wtype">${w.type}</div>
+    <div class="wtarget">${w.target}</div>
+    <div class="wstate ${w.state === "changement" ? "changed" : ""}">
+      <span class="st"></span>${w.state === "changement" ? "a changé" : "stable"}
+    </div>
+  </div>
+`,
+  )
+  .join("");
+
+/* ---------- CHAT ---------- */
+const messages = $("#messages");
+function addMsg(text, who) {
+  const el = document.createElement("div");
+  el.className = `msg ${who}`;
+  el.innerHTML =
+    who === "mav"
+      ? `<div class="avatar"></div><div class="bubble"></div>`
+      : `<div class="bubble"></div>`;
+  el.querySelector(".bubble").textContent = text;
+  messages.appendChild(el);
+  messages.scrollTop = messages.scrollHeight;
+  return el;
+}
+
+// message d'accueil
+addMsg(
+  "Salut Raphaël. Je suis prêt — dis-moi ce dont tu as besoin, ou tape une suggestion.",
+  "mav",
+);
+
+function reply(cmd, raw) {
+  const key = (cmd || raw || "").trim().toLowerCase();
+  let text;
+  if (MOCK.replies[key]) text = MOCK.replies[key];
+  else if (/^(aide|help|\?)$/.test(key)) text = MOCK.replies.aide;
+  else {
+    const pool = MOCK.replies.default;
+    text = pool[Math.floor(Math.random() * pool.length)];
+  }
+  const typing = $("#typing");
+  typing.hidden = false;
+  messages.scrollTop = messages.scrollHeight;
+  setTimeout(
+    () => {
+      typing.hidden = true;
+      addMsg(text, "mav");
+    },
+    700 + Math.random() * 500,
+  );
+}
+
+function send(raw, cmd) {
+  const text = (raw || "").trim();
+  if (!text && !cmd) return;
+  if (text) addMsg(text, "me");
+  reply(cmd, text);
+}
+
+// chat
+$("#chatForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const i = $("#chatInput");
+  send(i.value);
+  i.value = "";
+});
+// hero
+$("#heroForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const i = $("#heroInput");
+  send(i.value);
+  i.value = "";
+  go("chat");
+});
+// chips
+$$(".chip").forEach((c) =>
+  c.addEventListener("click", () => {
+    go("chat");
+    send("", c.dataset.cmd);
+  }),
+);
+
+/* ---------- LIVE TOUCH ---------- */
+const liveTexts = [
+  "Sauvegarde horaire terminée.",
+  "Mémoire rafraîchie.",
+  "Rien à signaler sur tes surveillances.",
+  "Petit check des services… tout est bon.",
+];
+setInterval(() => {
+  const n = new Date();
+  MOCK.today.unshift({
+    t: `${String(n.getHours()).padStart(2, "0")}:${String(n.getMinutes()).padStart(2, "0")}`,
+    text: liveTexts[Math.floor(Math.random() * liveTexts.length)],
+  });
+  MOCK.today.pop();
+  $("#today").innerHTML = MOCK.today
+    .map((t) => `<li><span class="t">${t.t}</span><span>${t.text}</span></li>`)
+    .join("");
+}, 9000);
