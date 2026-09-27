@@ -150,9 +150,12 @@ function renderStatus(st) {
   STATUS = st;
   if (!st) return;
   const online = st.agent_online;
-  $("#greetingSub").textContent = online
-    ? "Je suis en ligne. Tout est calme de mon côté."
-    : "Mon moteur ne répond pas pour l'instant.";
+  $("#greetingSub").textContent =
+    st.mode === "mock" || st.agent_online === undefined
+      ? "Aperçu de démonstration — je me connecte à l'agent quand tu m'ouvres depuis ton réseau."
+      : online
+        ? "Je suis en ligne. Tout est calme de mon côté."
+        : "Mon moteur ne répond pas pour l'instant.";
 
   $("#stats").innerHTML = [
     { v: st.jobs_active ?? "—", k: "automatisations actives" },
@@ -369,6 +372,7 @@ async function loadLive() {
     LIVE = false;
     document.body.dataset.mode = "mock";
     renderStatus({
+      mode: "mock",
       agent_online: false,
       jobs_active: MOCK.jobs.filter((j) => j.enabled).length,
       conversations: "—",
