@@ -2269,13 +2269,27 @@ body.is-thinking .orb::before {
   font-size: 0.98rem;
 }
 
-.bubble .md-ul {
-  margin: 0.3rem 0;
-  padding-left: 1.1rem;
+.bubble .md-p {
+  margin: 0 0 0.55rem;
+  line-height: 1.55;
 }
-.bubble .md-li {
+.bubble .md-p:last-child {
+  margin-bottom: 0;
+}
+
+.bubble .md-list {
+  margin: 0.35rem 0;
+  padding-left: 1.15rem;
+}
+.bubble .md-list .md-list {
+  margin: 0.15rem 0;
+}
+.bubble .md-list li {
   margin: 0.15rem 0;
   line-height: 1.5;
+}
+.bubble .md-list li::marker {
+  color: var(--ink-3);
 }
 
 .bubble .md-code {
@@ -2326,7 +2340,7 @@ body.is-thinking .orb::before {
   font-size: 0.95rem;
   margin: 0.4rem 0 0.2rem;
 }
-.jr-preview .md-ul {
+.jr-preview .md-list {
   padding-left: 1.1rem;
   margin: 0.2rem 0;
 }
@@ -2457,7 +2471,9 @@ body.is-thinking .orb::before {
   border: 1px solid var(--line);
   box-shadow: 0 4px 16px rgba(20, 40, 60, 0.08);
   cursor: zoom-in;
-  transition: transform 0.15s, box-shadow 0.15s;
+  transition:
+    transform 0.15s,
+    box-shadow 0.15s;
 }
 .bubble .md-img:hover {
   transform: scale(1.01);
