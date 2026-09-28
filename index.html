@@ -50,6 +50,12 @@
           </div>
         </div>
 
+        <button class="side-search" id="searchOpen">
+          <span class="nav-ico" data-ico="search"></span>
+          <span>Rechercher…</span>
+          <kbd>⌘K</kbd>
+        </button>
+
         <nav class="nav">
           <button class="nav-item is-active" data-view="home">
             <span class="nav-ico" data-ico="home"></span> Accueil
@@ -67,11 +73,30 @@
           <button class="nav-item" data-view="watch">
             <span class="nav-ico" data-ico="eye"></span> Surveillance
           </button>
+          <button class="nav-item" data-view="system">
+            <span class="nav-ico" data-ico="cpu"></span> Infra
+          </button>
         </nav>
 
         <div class="side-block">
           <div class="side-title">Connexions</div>
           <ul class="conn" id="connList"></ul>
+        </div>
+
+        <div class="side-tools">
+          <button
+            class="side-tool"
+            id="themeToggle"
+            title="Thème clair / sombre"
+          >
+            <span class="nav-ico" data-ico="moon"></span>
+          </button>
+          <button class="side-tool" id="notifyToggle" title="Notifications">
+            <span class="nav-ico" data-ico="bell"></span>
+          </button>
+          <button class="side-tool" id="voiceToggle" title="Lecture vocale">
+            <span class="nav-ico" data-ico="speaker"></span>
+          </button>
         </div>
 
         <div class="side-foot">
@@ -92,12 +117,24 @@
           </header>
 
           <form class="composer composer-hero" id="heroForm" autocomplete="off">
+            <label class="attach" title="Joindre un fichier">
+              <span class="nav-ico" data-ico="paperclip"></span>
+              <input type="file" id="heroFile" multiple hidden />
+            </label>
             <input
               type="text"
               id="heroInput"
               placeholder="Écris à Mav… « prépare un point sur mes mails »"
               aria-label="Message"
             />
+            <button
+              type="button"
+              class="mic-btn"
+              id="heroMic"
+              aria-label="Dicter"
+            >
+              <span class="nav-ico" data-ico="mic"></span>
+            </button>
             <button type="submit" class="send" aria-label="Envoyer">
               <span class="nav-ico" data-ico="send"></span>
             </button>
@@ -138,7 +175,6 @@
         <!-- CHAT -->
         <section class="view" id="view-chat">
           <div class="chat-layout">
-            <!-- Liste des conversations -->
             <aside class="conv-sidebar">
               <button class="new-conv" id="newConv">
                 <span class="nav-ico" data-ico="plus"></span> Nouvelle
@@ -147,29 +183,70 @@
               <div class="conv-list" id="convList"></div>
             </aside>
 
-            <!-- Fil de discussion -->
             <div class="card chat-card">
               <div class="chat-head">
-                <h2 id="chatTitle">Nouvelle discussion</h2>
-                <button class="icon-btn" id="renameBtn" title="Renommer">
-                  <span class="nav-ico" data-ico="edit"></span>
-                </button>
+                <div class="chat-head-left">
+                  <h2 id="chatTitle">Nouvelle discussion</h2>
+                  <span class="chat-agent" id="chatAgentLabel"></span>
+                </div>
+                <div class="chat-head-actions">
+                  <button
+                    class="icon-btn"
+                    id="exportBtn"
+                    title="Exporter en markdown"
+                  >
+                    <span class="nav-ico" data-ico="download"></span>
+                  </button>
+                  <button class="icon-btn" id="summaryBtn" title="Résumer">
+                    <span class="nav-ico" data-ico="sparkle"></span>
+                  </button>
+                  <button class="icon-btn" id="renameBtn" title="Renommer">
+                    <span class="nav-ico" data-ico="edit"></span>
+                  </button>
+                </div>
               </div>
               <div class="messages" id="messages"></div>
               <div class="typing" id="typing" hidden>
                 <span></span><span></span><span></span>
               </div>
               <form class="composer" id="chatForm" autocomplete="off">
+                <label class="attach" title="Joindre un fichier">
+                  <span class="nav-ico" data-ico="paperclip"></span>
+                  <input type="file" id="chatFileInput" multiple hidden />
+                </label>
                 <input
                   type="text"
                   id="chatInput"
                   placeholder="Écris un message…"
                   aria-label="Message"
                 />
-                <button type="submit" class="send" aria-label="Envoyer">
+                <button
+                  type="button"
+                  class="mic-btn"
+                  id="chatMic"
+                  aria-label="Dicter"
+                >
+                  <span class="nav-ico" data-ico="mic"></span>
+                </button>
+                <button
+                  type="submit"
+                  class="send"
+                  id="sendBtn"
+                  aria-label="Envoyer"
+                >
                   <span class="nav-ico" data-ico="send"></span>
                 </button>
+                <button
+                  type="button"
+                  class="stop-btn"
+                  id="stopBtn"
+                  hidden
+                  aria-label="Arrêter"
+                >
+                  <span class="nav-ico" data-ico="stop"></span>
+                </button>
               </form>
+              <div class="attachments" id="chatAttachments" hidden></div>
               <div class="chips" id="chatChips">
                 <button class="chip" data-cmd="statut">Statut</button>
                 <button class="chip" data-cmd="automatisations">
@@ -200,6 +277,14 @@
             <h1>Souvenirs</h1>
             <p>Les choses que je retiens d'une conversation à l'autre.</p>
           </header>
+          <div class="search-inline">
+            <span class="nav-ico" data-ico="search"></span>
+            <input
+              type="search"
+              id="memorySearch"
+              placeholder="Chercher dans la mémoire et les documents…"
+            />
+          </div>
           <div class="card">
             <ul class="memory" id="memoryList"></ul>
           </div>
@@ -214,9 +299,51 @@
               change.
             </p>
           </header>
+          <form class="watch-add" id="watchForm">
+            <select id="watchKind" aria-label="Type">
+              <option value="web">web</option>
+              <option value="mail">mail</option>
+              <option value="github">github</option>
+              <option value="moodle">moodle</option>
+              <option value="proxmox">proxmox</option>
+              <option value="health">health</option>
+            </select>
+            <input
+              type="text"
+              id="watchTarget"
+              placeholder="URL, requête, owner/repo…"
+            />
+            <button type="submit">Ajouter</button>
+          </form>
           <div class="watch" id="watchList"></div>
         </section>
+
+        <!-- SYSTEM / INFRA -->
+        <section class="view" id="view-system">
+          <header class="view-head">
+            <h1>Infra</h1>
+            <p>L'hyperviseur GAIA et ses machines, en direct de Proxmox.</p>
+          </header>
+          <div class="infra-nodes" id="infraNodes"></div>
+          <div class="infra-vms" id="infraVms"></div>
+        </section>
       </main>
+    </div>
+
+    <!-- ============ COMMAND PALETTE ============ -->
+    <div class="palette" id="palette" hidden>
+      <div class="palette-box">
+        <div class="palette-input">
+          <span class="nav-ico" data-ico="search"></span>
+          <input
+            type="text"
+            id="paletteInput"
+            placeholder="Chercher une discussion, un souvenir, une action…"
+            autocomplete="off"
+          />
+        </div>
+        <div class="palette-results" id="paletteResults"></div>
+      </div>
     </div>
 
     <!-- Bandeau d'installation PWA -->
@@ -232,6 +359,8 @@
         </button>
       </div>
     </div>
+
+    <div class="toast" id="toast" hidden></div>
 
     <script src="assets/js/app.js"></script>
   </body>
