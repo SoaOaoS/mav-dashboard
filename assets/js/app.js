@@ -1096,7 +1096,31 @@ loadLive();
 /* ---------- PWA : service worker + installation ---------- */
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
+    navigator.serviceWorker
+      .register("sw.js")
+      .then((reg) => {
+        // Une nouvelle version du SW est trouvée : on prend la main tout de suite.
+        reg.addEventListener("updatefound", () => {
+          const sw = reg.installing;
+          if (sw)
+            sw.addEventListener("statechange", () => {
+              if (
+                sw.state === "installed" &&
+                navigator.serviceWorker.controller
+              ) {
+                sw.postMessage("skip-waiting");
+              }
+            });
+        });
+      })
+      .catch(() => {});
+    // Quand le SW prend la main, on recharge une fois pour servir la version fraîche.
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (reloaded) return;
+      reloaded = true;
+      location.reload();
+    });
   });
 }
 let deferredPrompt = null;
