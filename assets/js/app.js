@@ -271,8 +271,11 @@ function renderWatch(watch) {
     .join("");
 }
 
-/* ---------- Chat ---------- */
+/* ---------- Chat & gestionnaire de sessions ---------- */
 const messages = $("#messages");
+let CURRENT_SESSION = null;
+let CONVS = [];
+
 function addMsg(text, who) {
   const el = document.createElement("div");
   el.className = `msg ${who}`;
@@ -286,7 +289,138 @@ function addMsg(text, who) {
   return el;
 }
 
-addMsg("Salut Raphaël. Je suis prêt — dis-moi ce dont tu as besoin.", "mav");
+function clearMessages() {
+  messages.innerHTML = "";
+}
+
+function welcome() {
+  clearMessages();
+  addMsg("Salut Raphaël. Je suis prêt — dis-moi ce dont tu as besoin.", "mav");
+}
+
+function setChatTitle(title) {
+  $("#chatTitle").textContent = title || "Nouvelle discussion";
+}
+
+function renderConvList() {
+  if (!CONVS.length) {
+    $("#convList").innerHTML =
+      `<div class="conv-empty">Aucune discussion.</div>`;
+    return;
+  }
+  $("#convList").innerHTML = CONVS.map(
+    (c) => `
+    <div class="conv-item ${c.id === CURRENT_SESSION ? "is-active" : ""}" data-id="${esc(c.id)}">
+      <span class="ctitle">${esc(c.title)}</span>
+      <button class="cdel" data-del="${esc(c.id)}" title="Supprimer">
+        <span class="nav-ico" data-ico="trash"></span>
+      </button>
+    </div>`,
+  ).join("");
+}
+
+async function loadConvs() {
+  if (!LIVE) {
+    CONVS = [{ id: "mock", title: "Discussion de démo" }];
+    CURRENT_SESSION = "mock";
+    renderConvList();
+    setChatTitle("Discussion de démo");
+    return;
+  }
+  try {
+    const r = await api.get("sessions");
+    CONVS = r.sessions || [];
+  } catch (_) {
+    CONVS = [];
+  }
+  renderConvList();
+}
+
+async function openSession(id) {
+  CURRENT_SESSION = id;
+  renderConvList();
+  if (!LIVE) return;
+  try {
+    const s = await api.get(`session?id=${encodeURIComponent(id)}`);
+    setChatTitle(s.title);
+    clearMessages();
+    if (!s.messages || !s.messages.length) {
+      welcome();
+    } else {
+      s.messages.forEach((m) => addMsg(m.text, m.role));
+    }
+  } catch (_) {
+    welcome();
+  }
+}
+
+async function newSession() {
+  if (!LIVE) {
+    CURRENT_SESSION = "mock";
+    setChatTitle("Nouvelle discussion");
+    welcome();
+    go("chat");
+    return;
+  }
+  try {
+    const s = await api.post("session/new", {});
+    CURRENT_SESSION = s.id;
+    setChatTitle(s.title);
+    welcome();
+    await loadConvs();
+    renderConvList();
+    go("chat");
+  } catch (_) {
+    welcome();
+  }
+}
+
+async function deleteSession(id) {
+  if (!LIVE) return;
+  try {
+    await api.post("session/delete", { id });
+    if (CURRENT_SESSION === id) {
+      CURRENT_SESSION = null;
+      setChatTitle("");
+    }
+    await loadConvs();
+    if (!CURRENT_SESSION && CONVS.length) {
+      await openSession(CONVS[0].id);
+    } else if (!CONVS.length) {
+      newSession();
+    } else {
+      renderConvList();
+    }
+  } catch (_) {}
+}
+
+async function renameSession() {
+  if (!LIVE || !CURRENT_SESSION) return;
+  const current = ($("#chatTitle").textContent || "").trim();
+  const name = prompt("Renommer la discussion :", current);
+  if (!name || !name.trim()) return;
+  try {
+    await api.post("session/rename", {
+      id: CURRENT_SESSION,
+      title: name.trim(),
+    });
+    setChatTitle(name.trim());
+    await loadConvs();
+  } catch (_) {}
+}
+
+$("#newConv").addEventListener("click", () => newSession());
+$("#renameBtn").addEventListener("click", () => renameSession());
+$("#convList").addEventListener("click", (e) => {
+  const del = e.target.closest(".cdel");
+  if (del) {
+    e.stopPropagation();
+    deleteSession(del.dataset.del);
+    return;
+  }
+  const item = e.target.closest(".conv-item");
+  if (item) openSession(item.dataset.id);
+});
 
 async function send(raw, cmd) {
   const text = (raw || "").trim();
@@ -300,9 +434,14 @@ async function send(raw, cmd) {
 
   if (LIVE) {
     try {
-      const res = await api.post("ask", { prompt: text || cmd });
+      const res = await api.post("ask", {
+        prompt: text || cmd,
+        session: CURRENT_SESSION || "",
+      });
       typing.hidden = true;
       addMsg(res.answer || "…", "mav");
+      // Rafraîchit les titres (le premier échange peut auto-titrer côté moteur)
+      await loadConvs();
       return;
     } catch (e) {
       typing.hidden = true;
@@ -349,6 +488,8 @@ $$(".chip").forEach((c) =>
   }),
 );
 
+welcome();
+
 /* ---------- Chargement ---------- */
 async function loadLive() {
   try {
@@ -368,6 +509,13 @@ async function loadLive() {
     renderMemory(mem);
     renderWatch(watch);
     renderToday([{ t: "—", text: "Connecté au moteur de l'agent en direct." }]);
+
+    await loadConvs();
+    if (CONVS.length) {
+      await openSession(CONVS[0].id);
+    } else {
+      await newSession();
+    }
   } catch (e) {
     LIVE = false;
     document.body.dataset.mode = "mock";
@@ -385,6 +533,8 @@ async function loadLive() {
     renderMemory(MOCK.memory);
     renderWatch(MOCK.watch);
     renderToday(MOCK.today);
+    CURRENT_SESSION = "mock";
+    renderConvList();
   }
 }
 loadLive();
