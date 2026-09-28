@@ -517,6 +517,132 @@ def global_search(query: str) -> dict:
     return {"documents": docs, "conversations": convs, "facts": facts}
 
 
+# ------------------------------------------------------------------- markets
+
+# Indices/symboles proposés par défaut dans le dashboard.
+MARKET_SYMBOLS = [
+    "SPY", "QQQ", "DIA", "IWM", "GLD", "SLV", "USO", "TLT", "VIX",
+    "NVDA", "AAPL", "MSFT", "TSLA", "BTC-USD", "ETH-USD",
+    "^GSPC", "^IXIC", "^DJI", "^FCHI", "^GDAXI",
+]
+
+_YF_HOSTS = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]
+_YF_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+
+
+def _yf(path: str) -> dict:
+    last = None
+    for host in _YF_HOSTS:
+        url = f"https://{host}{path}"
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": _YF_UA,
+                    "Accept": "application/json,text/plain,*/*",
+                    "Accept-Language": "en-US,en;q=0.9",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=12) as r:
+                return json.loads(r.read().decode("utf-8", "replace"))
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            continue
+    raise last or RuntimeError("yahoo indisponible")
+
+
+def get_quote(symbol: str) -> dict:
+    """Dernier prix et variation d'un symbole (Yahoo Finance)."""
+    sym = symbol.strip().upper()
+    data = _yf(f"/v8/finance/chart/{urllib.parse.quote(sym)}?range=5d&interval=1d")
+    res = (data.get("chart", {}).get("result") or [None])[0]
+    if not res:
+        return {"symbol": sym, "error": "introuvable"}
+    meta = res.get("meta", {})
+    price = meta.get("regularMarketPrice")
+    prev = meta.get("chartPreviousClose") or meta.get("previousClose")
+    change = None
+    pct = None
+    if price is not None and prev:
+        change = round(price - prev, 4)
+        pct = round((price - prev) / prev * 100, 2)
+    return {
+        "symbol": sym,
+        "name": meta.get("shortName") or meta.get("symbol") or sym,
+        "currency": meta.get("currency"),
+        "price": price,
+        "prev": prev,
+        "change": change,
+        "pct": pct,
+    }
+
+
+def get_quotes(symbols: list[str]) -> dict:
+    out = []
+    for s in symbols[:24]:
+        try:
+            q = get_quote(s)
+        except Exception:
+            q = {"symbol": s, "error": "indisponible"}
+        out.append(q)
+    return {"quotes": out}
+
+
+def get_chart(symbol: str, range_: str = "1mo", interval: str = "1d") -> dict:
+    """Séries OHLC + volumes pour un graphique (Yahoo Finance)."""
+    sym = symbol.strip().upper()
+    allowed_ranges = {"1d": ("5m", "1d"), "5d": ("30m", "5d"), "1mo": ("1d", "1mo"),
+                      "3mo": ("1d", "3mo"), "6mo": ("1d", "6mo"), "1y": ("1d", "1y"),
+                      "2y": ("1wk", "2y"), "5y": ("1wk", "5y")}
+    if range_ in allowed_ranges:
+        interval = allowed_ranges[range_][0]
+    path = (
+        f"/v8/finance/chart/{urllib.parse.quote(sym)}"
+        f"?range={urllib.parse.quote(range_)}&interval={urllib.parse.quote(interval)}"
+    )
+    data = _yf(path)
+    res = (data.get("chart", {}).get("result") or [None])[0]
+    if not res:
+        return {"symbol": sym, "error": "introuvable"}
+    meta = res.get("meta", {})
+    ts = res.get("timestamp") or []
+    quote = (res.get("indicators", {}).get("quote") or [{}])[0]
+    opens = quote.get("open") or []
+    highs = quote.get("high") or []
+    lows = quote.get("low") or []
+    closes = quote.get("close") or []
+    vols = quote.get("volume") or []
+
+    candles = []
+    for i, t in enumerate(ts):
+        c = closes[i] if i < len(closes) else None
+        o = opens[i] if i < len(opens) else None
+        h = highs[i] if i < len(highs) else None
+        lo = lows[i] if i < len(lows) else None
+        if c is None or o is None or h is None or lo is None:
+            continue
+        row = {"time": int(t), "open": round(o, 4), "high": round(h, 4),
+               "low": round(lo, 4), "close": round(c, 4)}
+        if i < len(vols) and vols[i] is not None:
+            row["volume"] = int(vols[i])
+        candles.append(row)
+
+    price = meta.get("regularMarketPrice")
+    prev = meta.get("chartPreviousClose") or meta.get("previousClose")
+    pct = round((price - prev) / prev * 100, 2) if (price and prev) else None
+    return {
+        "symbol": sym,
+        "name": meta.get("shortName") or sym,
+        "currency": meta.get("currency"),
+        "price": price,
+        "pct": pct,
+        "candles": candles,
+    }
+
+
 # ------------------------------------------------------------------- chat
 
 PREFIX = "dash: "
@@ -1045,6 +1171,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, global_search(p.get("q", "")))
             if path == "/api/push/key":
                 return self._send(200, {"key": push_public_key()})
+            if path == "/api/chart":
+                return self._send(200, get_chart(p.get("symbol", "SPY"), p.get("range", "1mo")))
+            if path == "/api/quotes":
+                syms = [s for s in (p.get("symbols") or "").split(",") if s.strip()]
+                return self._send(200, get_quotes(syms or MARKET_SYMBOLS))
             if path == "/api/stream":
                 return self._stream(p)
             return self._static(path)
