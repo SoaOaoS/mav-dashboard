@@ -556,3 +556,62 @@ setInterval(async () => {
     renderStatus(st);
   } catch (_) {}
 }, 15000);
+
+/* ---------- PWA : service worker + installation ---------- */
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  });
+}
+
+let deferredPrompt = null;
+const banner = $("#installBanner");
+
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  if (localStorage.getItem("mav-install-dismissed") !== "1") {
+    banner.hidden = false;
+  }
+});
+
+$("#installBtn").addEventListener("click", async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  try {
+    await deferredPrompt.userChoice;
+  } catch (_) {}
+  deferredPrompt = null;
+  banner.hidden = true;
+});
+$("#installClose").addEventListener("click", () => {
+  banner.hidden = true;
+  localStorage.setItem("mav-install-dismissed", "1");
+});
+window.addEventListener("appinstalled", () => {
+  banner.hidden = true;
+});
+
+// iOS ne déclenche pas beforeinstallprompt : on affiche une aide si Safari iOS.
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const isStandalone =
+  window.matchMedia("(display-mode: standalone)").matches ||
+  navigator.standalone === true;
+if (
+  isIOS &&
+  !isStandalone &&
+  localStorage.getItem("mav-install-dismissed") !== "1"
+) {
+  const s = banner.querySelector(".install-text span");
+  if (s) s.textContent = "Appuie sur Partager puis « Sur l'écran d'accueil ».";
+  $("#installBtn").textContent = "Compris";
+  $("#installBtn").addEventListener(
+    "click",
+    () => {
+      banner.hidden = true;
+      localStorage.setItem("mav-install-dismissed", "1");
+    },
+    { once: true },
+  );
+  banner.hidden = false;
+}
