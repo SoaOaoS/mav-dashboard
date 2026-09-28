@@ -635,10 +635,10 @@ function renderTable(lines) {
   return `<div class="md-table-wrap"><table class="md-table"><thead><tr>${th}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
-// Rendu en ligne (gras, italique, code, liens) réutilisable dans les cellules.
-// NB : le texte reçu est déjà échappé (on n'échappe pas une 2e fois).
+// Rendu en ligne (gras, italique, code, liens, images).
+// Échappe le HTML puis applique les transformations markdown.
 function inline(s) {
-  let t = String(s == null ? "" : s);
+  let t = escapeHtml(s);
   t = t.replace(/`([^`\n]+)`/g, '<code class="md-inline">$1</code>');
   t = t.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
   t = t.replace(/__([^_\n]+)__/g, "<strong>$1</strong>");
@@ -646,10 +646,13 @@ function inline(s) {
   t = t.replace(/(^|[^_])_([^_\n]+)_/g, "$1<em>$2</em>");
   t = t.replace(/~~([^~\n]+)~~/g, "<del>$1</del>");
   t = t.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt, src) => {
-    const url = /^(https?:|data:image)/i.test(src)
-      ? src
-      : "/api/asset?path=" + encodeURIComponent(src);
-    return `<img class="md-img" src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" loading="lazy">`;
+    const raw = src.replace(/&amp;/g, "&");
+    const url = /^(https?:|data:image)/i.test(raw)
+      ? raw
+      : /^media:/i.test(raw)
+        ? "/api/media/by-name?name=" + encodeURIComponent(raw.slice(6))
+        : "/api/asset?path=" + encodeURIComponent(raw);
+    return `<img class="md-img" src="${escapeHtml(url)}" alt="${alt}" loading="lazy">`;
   });
   t = t.replace(
     /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
@@ -661,8 +664,7 @@ function inline(s) {
 function mdToHtml(src) {
   let text = String(src == null ? "" : src);
 
-  // 0) Graphiques : directive [[chart:SYMBOL:RANGE]] ou bloc ```chart:SYMBOL:RANGE
-  //    -> on les extrait avant tout le reste.
+  // 0) Graphiques : directive [[chart:SYMBOL:RANGE]] ou bloc ```chart:...
   const charts = [];
   const pushChart = (symbol, range) => {
     const i = charts.length;
@@ -685,134 +687,185 @@ function mdToHtml(src) {
     (_, s, r) => `${pushChart(s, r)}\n`,
   );
 
-  // 1) On isole les blocs de code pour ne pas les transformer ensuite.
+  // 1) Blocs de code : isolés avant tout traitement (placeholders).
   const codeBlocks = [];
-  text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+  text = text.replace(/```([\w-]*)\n?([\s\S]*?)```/g, (_, lang, code) => {
     const i = codeBlocks.length;
+    const cls = lang
+      ? ` class="md-code lang-${escapeHtml(lang)}"`
+      : ' class="md-code"';
     codeBlocks.push(
-      `<pre class="md-code"><code>${escapeHtml(code.replace(/\n$/, ""))}</code></pre>`,
+      `<pre${cls}><code>${escapeHtml(code.replace(/\n$/, ""))}</code></pre>`,
     );
     return `\u0000CODE${i}\u0000`;
   });
 
-  // 2) Échappe le reste.
-  text = escapeHtml(text);
+  const fmt = (s) => inline(s);
 
-  // 3) Tableaux : lignes consécutives commençant par |, avec séparateur.
-  const tables = [];
-  {
-    const lines = text.split("\n");
-    const out = [];
+  // 2) Tableau : renvoie les lignes HTML d'une table (ou null si pas un début).
+  const renderTableAt = (lines, i) => {
+    if (!/^\s*\|.*\|\s*$/.test(lines[i])) return null;
+    if (i + 1 >= lines.length || !isTableSep(lines[i + 1])) return null;
+    const block = [];
+    let j = i;
+    while (j < lines.length && /^\s*\|.*\|\s*$/.test(lines[j])) {
+      block.push(lines[j]);
+      j++;
+    }
+    return { html: renderTable(block), next: j };
+  };
+
+  // 3) Blocs : parseur ligne par ligne (niveau récursif pour les citations).
+  const renderBlocks = (lines) => {
+    let out = "";
+    let para = [];
+    const flushPara = () => {
+      if (para.length) {
+        out += `<p class="md-p">${para.join("<br>")}</p>`;
+        para = [];
+      }
+    };
+
     let i = 0;
     while (i < lines.length) {
-      const line = lines[i];
-      if (
-        /^\s*\|.*\|\s*$/.test(line) &&
-        i + 1 < lines.length &&
-        isTableSep(lines[i + 1])
-      ) {
-        const block = [];
+      const raw = lines[i];
+      const line = raw.trim();
+
+      if (!line) {
+        flushPara();
+        i++;
+        continue;
+      }
+
+      // Placeholder de bloc de code.
+      let m = line.match(/^\u0000CODE(\d+)\u0000$/);
+      if (m) {
+        flushPara();
+        out += codeBlocks[Number(m[1])] || "";
+        i++;
+        continue;
+      }
+      // Placeholder de graphique.
+      m = line.match(/^\u0000CHART(\d+)\u0000$/);
+      if (m) {
+        flushPara();
+        const c = charts[Number(m[1])] || { symbol: "SPY", range: "1mo" };
+        out += `<div class="md-chart" data-symbol="${escapeHtml(c.symbol)}" data-range="${escapeHtml(c.range)}"></div>`;
+        i++;
+        continue;
+      }
+
+      // Titres.
+      m = raw.match(/^(#{1,6})\s+(.*)$/);
+      if (m) {
+        flushPara();
+        const lvl = Math.min(m[1].length + 1, 6);
+        out += `<h${lvl} class="md-h">${fmt(m[2])}</h${lvl}>`;
+        i++;
+        continue;
+      }
+
+      // Séparateur horizontal.
+      if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(raw)) {
+        flushPara();
+        out += '<hr class="md-hr">';
+        i++;
+        continue;
+      }
+
+      // Tableau.
+      const t = renderTableAt(lines, i);
+      if (t) {
+        flushPara();
+        out += t.html;
+        i = t.next;
+        continue;
+      }
+
+      // Citation (bloc de lignes > ...).
+      if (/^\s*>\s?/.test(raw)) {
+        flushPara();
+        const inner = [];
         let j = i;
-        while (j < lines.length && /^\s*\|.*\|\s*$/.test(lines[j])) {
-          block.push(lines[j]);
+        while (j < lines.length && /^\s*>\s?/.test(lines[j])) {
+          inner.push(lines[j].replace(/^\s*>\s?/, ""));
           j++;
         }
-        const k = tables.length;
-        tables.push(renderTable(block));
-        out.push(`\u0000TABLE${k}\u0000`);
+        out += `<blockquote class="md-quote">${renderBlocks(inner)}</blockquote>`;
         i = j;
         continue;
       }
-      out.push(line);
+
+      // Liste (puces ou numérotée, avec imbrication).
+      if (/^(\s*)([-*+]|\d+[.)])\s+/.test(raw)) {
+        flushPara();
+        const items = [];
+        let j = i;
+        while (j < lines.length && /^(\s*)([-*+]|\d+[.)])\s+/.test(lines[j])) {
+          const mm = lines[j].match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+          const indent = mm[1].replace(/\t/g, "    ").length;
+          items.push({
+            indent,
+            ordered: /^\d/.test(mm[2]),
+            text: mm[3],
+          });
+          j++;
+        }
+        out += renderList(items, fmt);
+        i = j;
+        continue;
+      }
+
+      // Ligne de texte -> paragraphe.
+      para.push(fmt(raw));
       i++;
     }
-    text = out.join("\n");
-  }
-
-  // 4) Titres (###, ##, #) en début de ligne.
-  text = text.replace(/^######\s+(.+)$/gm, '<h6 class="md-h">$1</h6>');
-  text = text.replace(/^#####\s+(.+)$/gm, '<h6 class="md-h">$1</h6>');
-  text = text.replace(/^####\s+(.+)$/gm, '<h5 class="md-h">$1</h5>');
-  text = text.replace(/^###\s+(.+)$/gm, '<h4 class="md-h">$1</h4>');
-  text = text.replace(/^##\s+(.+)$/gm, '<h3 class="md-h">$1</h3>');
-  text = text.replace(/^#\s+(.+)$/gm, '<h2 class="md-h">$1</h2>');
-
-  // 5) Séparateur horizontal.
-  text = text.replace(/^\s*([-*_]){3,}\s*$/gm, '<hr class="md-hr">');
-
-  // 6) Citations.
-  text = text.replace(
-    /^&gt;\s?(.+)$/gm,
-    '<blockquote class="md-quote">$1</blockquote>',
-  );
-  text = text.replace(/<\/blockquote>\n<blockquote class="md-quote">/g, "<br>");
-
-  // 7) Listes à puces et ordonnées.
-  text = text.replace(/^[-*]\s+(.+)$/gm, '<li class="md-li">$1</li>');
-  text = text.replace(/^\d+\.\s+(.+)$/gm, '<li class="md-li">$1</li>');
-  text = text.replace(
-    /(<li class="md-li">[\s\S]*?<\/li>)(?!\s*<li)/g,
-    '<ul class="md-ul">$1</ul>',
-  );
-
-  // 8) Code inline.
-  text = text.replace(/`([^`\n]+)`/g, '<code class="md-inline">$1</code>');
-
-  // 9) Gras, italique, barré.
-  text = text.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
-  text = text.replace(/__([^_\n]+)__/g, "<strong>$1</strong>");
-  text = text.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
-  text = text.replace(/(^|[^_])_([^_\n]+)_/g, "$1<em>$2</em>");
-  text = text.replace(/~~([^~\n]+)~~/g, "<del>$1</del>");
-
-  // 10a) Images ![alt](url ou chemin ou media:nom) -> <img>.
-  //      - https://…            : direct
-  //      - media:nom.png        : média archivé (retrouvé par nom, persistant)
-  //      - chemin local         : via /api/asset
-  const imgSrc = (src) => {
-    if (/^https?:/i.test(src) || /^data:image/i.test(src)) return src;
-    if (/^media:/i.test(src))
-      return "/api/media/by-name?name=" + encodeURIComponent(src.slice(6));
-    return "/api/asset?path=" + encodeURIComponent(src);
+    flushPara();
+    return out;
   };
-  text = text.replace(
-    /!\[([^\]]*)\]\(([^)\s]+)\)/g,
-    (_, alt, src) =>
-      `<img class="md-img" src="${escapeHtml(imgSrc(src))}" alt="${escapeHtml(alt)}" loading="lazy">`,
-  );
 
-  // 10b) Liens [texte](url) — on n'autorise que http(s).
-  text = text.replace(
-    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
-  );
-
-  // 11) Sauts de ligne (hors structures de blocs).
-  text = text.replace(/\n/g, "<br>");
-  text = text.replace(/([>])\s*<br>\s*(<li)/g, "$1$2"); // pas de <br> entre items
-  text = text.replace(
-    /<\/(li|h[2-6]|blockquote|ul|pre)>\s*<br>\s*(?=<li)/g,
-    "</$1>",
-  );
-  text = text.replace(/<(h[2-6]|ul|pre|hr|blockquote)[^>]*><br>/g, "<$1>");
-  text = text.replace(/<br>(<\/(h[2-6]|ul|pre|blockquote|li)>)/g, "$1");
-  text = text.replace(/<\/li><br>/g, "</li>");
-
-  // 12) Réinjecte les tableaux, les graphiques puis les blocs de code.
-  text = text.replace(
-    /\u0000TABLE(\d+)\u0000/g,
-    (_, i) => tables[Number(i)] || "",
-  );
-  text = text.replace(/\u0000CHART(\d+)\u0000/g, (_, i) => {
-    const c = charts[Number(i)] || { symbol: "SPY", range: "1mo" };
-    return `<div class="md-chart" data-symbol="${escapeHtml(c.symbol)}" data-range="${escapeHtml(c.range)}"></div>`;
-  });
-  text = text.replace(
+  const html = renderBlocks(text.split("\n"));
+  // Sécurité : aucun placeholder de code ne doit subsister.
+  return html.replace(
     /\u0000CODE(\d+)\u0000/g,
     (_, i) => codeBlocks[Number(i)] || "",
   );
+}
 
-  return text;
+// Table des listes : construit l'arbre depuis l'indentation puis rend le HTML.
+function renderList(items, fmt) {
+  const root = { children: [] };
+  const stack = [{ indent: -1, node: root }];
+  for (const it of items) {
+    while (stack.length > 1 && it.indent <= stack[stack.length - 1].indent) {
+      stack.pop();
+    }
+    const parent = stack[stack.length - 1].node;
+    const node = { ordered: it.ordered, text: it.text, children: [] };
+    parent.children.push(node);
+    stack.push({ indent: it.indent, node });
+  }
+  return renderListNodes(root.children, fmt);
+}
+
+function renderListNodes(nodes, fmt) {
+  let out = "";
+  let i = 0;
+  while (i < nodes.length) {
+    const ordered = nodes[i].ordered;
+    let j = i;
+    while (j < nodes.length && nodes[j].ordered === ordered) j++;
+    const tag = ordered ? "ol" : "ul";
+    out += `<${tag} class="md-list">`;
+    for (let k = i; k < j; k++) {
+      const n = nodes[k];
+      const inner = n.children.length ? renderListNodes(n.children, fmt) : "";
+      out += `<li>${fmt(n.text)}${inner}</li>`;
+    }
+    out += `</${tag}>`;
+    i = j;
+  }
+  return out;
 }
 
 /* ---------- Graphiques (lightweight-charts) ---------- */
@@ -1187,97 +1240,85 @@ async function send(raw, cmd) {
     );
 
   try {
-    await new Promise((resolve, reject) => {
-      const es = new EventSource(`/api/stream?${qs.toString()}`);
-      let sessionFromServer = null;
-      let finished = false; // une réponse a été reçue / le flux est terminé
-      let gotAnyDelta = false;
+    const resp = await fetch(`/api/stream?${qs.toString()}`, {
+      headers: { Accept: "text/event-stream" },
+    });
+    if (!resp.ok || !resp.body) throw new Error("flux indisponible");
 
-      const finish = () => {
-        if (finished) return;
-        finished = true;
-        try {
-          es.close();
-        } catch (_) {}
-        resolve();
-      };
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let sessionFromServer = null;
+    let finished = false;
 
-      es.addEventListener("start", (e) => {
+    const handle = (evName, data) => {
+      if (evName === "start") {
         try {
-          sessionFromServer = JSON.parse(e.data).session;
+          sessionFromServer = JSON.parse(data).session;
         } catch (_) {}
-      });
-      es.addEventListener("delta", (e) => {
-        const d = JSON.parse(e.data).delta || "";
+      } else if (evName === "delta") {
+        let d = "";
+        try {
+          d = JSON.parse(data).delta || "";
+        } catch (_) {}
         acc += d;
-        gotAnyDelta = true;
         if (!bubble) {
           $("#typing").hidden = true;
           bubble = addMsg("", "mav");
         }
-        // Rendu markdown en direct pendant le streaming.
         bubble.innerHTML = mdToHtml(acc);
         messages.scrollTop = messages.scrollHeight;
-      });
-      // Les étapes d'outils ne sont plus affichées : on ne garde que la réponse.
-      es.addEventListener("done", (e) => {
+      } else if (evName === "done") {
         finished = true;
         try {
-          const d = JSON.parse(e.data);
+          const d = JSON.parse(data);
           if (!sessionFromServer && d.session) sessionFromServer = d.session;
-          // Si le flux n'a émis aucun delta mais un texte final, on l'affiche.
           if (!acc && d.text) acc = d.text;
         } catch (_) {}
-        if (sessionFromServer && sessionFromServer !== CURRENT_SESSION) {
-          CURRENT_SESSION = sessionFromServer;
-        }
-        if (!acc) addMsg("(pas de réponse)", "mav");
-        else if (bubble) {
-          // Rendu final + montage des graphiques/tableaux une fois complet.
-          bubble.innerHTML = mdToHtml(acc);
-          mountCharts(bubble);
-        } else {
-          addMsg(acc, "mav");
-        }
-        try {
-          es.close();
-        } catch (_) {}
-        resolve();
-      });
-      // Le flux a explicitement signalé une erreur métier.
-      es.addEventListener("error", (e) => {
-        if (finished) return;
-        // EventSource émet aussi un "error" natif (sans e.data) quand la
-        // connexion se ferme après la réponse : on l'ignore si on a déjà du
-        // contenu, sinon on affiche une vraie erreur.
-        if (!e.data) {
-          if (gotAnyDelta || acc) return finish();
-          return finish();
-        }
+      } else if (evName === "error") {
+        finished = true;
         let msg = "Je n'ai pas pu joindre mon moteur.";
         try {
-          msg = "Erreur : " + JSON.parse(e.data).message;
+          msg = "Erreur : " + JSON.parse(data).message;
         } catch (_) {}
-        addMsg(msg, "mav");
-        finished = true;
-        try {
-          es.close();
-        } catch (_) {}
-        resolve();
-      });
-      // Erreur réseau native : si rien n'est arrivé, on prévient ; sinon le
-      // "done" a déjà rendu la réponse, on ne double pas le message.
-      es.onerror = () => {
-        if (finished) return;
-        window.setTimeout(() => {
-          if (finished) return;
-          if (gotAnyDelta || acc) return finish();
-          // Aucune donnée reçue : vraie panne de connexion.
-          if (!bubble) addMsg("Connexion interrompue avant la réponse.", "mav");
-          finish();
-        }, 1500);
-      };
-    });
+        errorMsg = msg;
+      }
+    };
+
+    let errorMsg = null;
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) !== -1) {
+        const block = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        let evName = "message";
+        let dataLines = [];
+        for (const line of block.split("\n")) {
+          if (line.startsWith("event:")) evName = line.slice(6).trim();
+          else if (line.startsWith("data:"))
+            dataLines.push(line.slice(5).trim());
+        }
+        handle(evName, dataLines.join("\n"));
+      }
+      if (errorMsg) break;
+    }
+
+    if (sessionFromServer && sessionFromServer !== CURRENT_SESSION) {
+      CURRENT_SESSION = sessionFromServer;
+    }
+    if (errorMsg) {
+      addMsg(errorMsg, "mav");
+    } else if (!acc) {
+      addMsg("(pas de réponse)", "mav");
+    } else if (bubble) {
+      bubble.innerHTML = mdToHtml(acc);
+      mountCharts(bubble);
+    } else {
+      addMsg(acc, "mav");
+    }
   } catch (_) {
     addMsg("Connexion interrompue.", "mav");
   } finally {
