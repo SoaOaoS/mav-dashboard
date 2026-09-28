@@ -469,15 +469,20 @@ def watch_remove(item_id: int) -> bool:
 
 
 def get_agents() -> dict:
+    # Agents internes qu'on ne propose pas dans le sélecteur.
+    hidden = {"compaction", "title", "summary", "plan", "build"}
     try:
         agents = http_json(f"{OPENCODE_URL}/agent", timeout=6) or []
         names = sorted(
             a["name"]
             for a in agents
-            if isinstance(a, dict) and a.get("name") and a.get("mode") in (None, "all", "primary")
+            if isinstance(a, dict)
+            and a.get("name")
+            and a["name"] not in hidden
+            and a.get("mode") in (None, "all", "primary")
         )
         ordered = [n for n in PRIMARY_AGENTS if n in names] + [n for n in names if n not in PRIMARY_AGENTS]
-        return {"agents": ordered}
+        return {"agents": ordered or PRIMARY_AGENTS}
     except Exception:
         return {"agents": PRIMARY_AGENTS}
 
@@ -671,6 +676,10 @@ def list_sessions() -> list[dict]:
     for s in _list_raw_sessions():
         title = str(s.get("title", ""))
         if not title.startswith(PREFIX):
+            continue
+        # Les lancements de job créent « dash: job: <nom> » : ce ne sont pas des
+        # discussions, on ne les met pas dans la liste.
+        if title[len(PREFIX):].startswith("job:"):
             continue
         t = s.get("time", {})
         out.append({
@@ -873,6 +882,19 @@ def stream_answer(prompt: str, sid: str, agent: str = "", files: list | None = N
     if ag:
         body["agent"] = ag
     body.update(_model_body())
+
+    # Auto-titre : la première fois qu'on écrit dans une discussion encore
+    # nommée par défaut, son titre devient le début du message.
+    try:
+        if prompt.strip():
+            current = session_title(sid)[len(PREFIX):]
+            if current in ("", DEFAULT_TITLE):
+                auto = " ".join(prompt.strip().split())[:48]
+                if len(prompt.strip()) > 48:
+                    auto += "…"
+                rename_session(sid, auto)
+    except Exception:
+        pass
 
     def sse(event: str, data: dict) -> str:
         return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
