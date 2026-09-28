@@ -645,6 +645,12 @@ function inline(s) {
   t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
   t = t.replace(/(^|[^_])_([^_\n]+)_/g, "$1<em>$2</em>");
   t = t.replace(/~~([^~\n]+)~~/g, "<del>$1</del>");
+  t = t.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt, src) => {
+    const url = /^(https?:|data:image)/i.test(src)
+      ? src
+      : "/api/asset?path=" + encodeURIComponent(src);
+    return `<img class="md-img" src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" loading="lazy">`;
+  });
   t = t.replace(
     /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
     '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
@@ -759,7 +765,20 @@ function mdToHtml(src) {
   text = text.replace(/(^|[^_])_([^_\n]+)_/g, "$1<em>$2</em>");
   text = text.replace(/~~([^~\n]+)~~/g, "<del>$1</del>");
 
-  // 10) Liens [texte](url) — on n'autorise que http(s).
+  // 10a) Images ![alt](url ou chemin) -> <img>. On accepte http(s), data:image
+  //      et les chemins locaux (servis via /api/asset).
+  text = text.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt, src) => {
+    let url = src;
+    if (/^(https?:|data:image)/i.test(src)) {
+      url = src;
+    } else {
+      // chemin local (relatif ou file://) -> via l'endpoint /api/asset
+      url = "/api/asset?path=" + encodeURIComponent(src);
+    }
+    return `<img class="md-img" src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" loading="lazy">`;
+  });
+
+  // 10b) Liens [texte](url) — on n'autorise que http(s).
   text = text.replace(
     /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
     '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
@@ -892,6 +911,23 @@ function addMsg(text, who) {
   messages.scrollTop = messages.scrollHeight;
   return bubble;
 }
+
+/* Lightbox : clic sur une image du fil pour l'agrandir. */
+const lightbox = document.createElement("div");
+lightbox.className = "lightbox";
+lightbox.hidden = true;
+lightbox.innerHTML = `<img alt="">`;
+lightbox.addEventListener("click", () => (lightbox.hidden = true));
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") lightbox.hidden = true;
+});
+messages.addEventListener("click", (e) => {
+  const img = e.target.closest("img.md-img");
+  if (!img) return;
+  lightbox.querySelector("img").src = img.src;
+  lightbox.hidden = false;
+});
+document.body.appendChild(lightbox);
 function addToolNote(text) {
   const el = document.createElement("div");
   el.className = "tool-note";
