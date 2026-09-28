@@ -546,15 +546,78 @@ let abortController = null;
 let pendingFiles = [];
 
 /* ---------- Mini renderer markdown (zéro dépendance) ----------
-   Gère : blocs de code ```, code inline, gras, italique, titres,
-   listes, citations, liens, et les sauts de ligne. Échappe le HTML
-   avant tout, pour éviter toute injection. */
+   Gère : blocs de code ```, tableaux, code inline, gras, italique,
+   titres, listes, citations, liens, et les sauts de ligne. Échappe
+   le HTML avant tout, pour éviter toute injection. */
 function escapeHtml(s) {
   return String(s == null ? "" : s)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+// Découpe une ligne de tableau en cellules (| a | b | -> [a, b]).
+function splitRow(line) {
+  let s = String(line).trim();
+  if (s.startsWith("|")) s = s.slice(1);
+  if (s.endsWith("|")) s = s.slice(0, -1);
+  return s.split("|").map((c) => c.trim());
+}
+
+// Vrai si la ligne est un séparateur de tableau (|---|---|).
+function isTableSep(line) {
+  const cells = splitRow(line);
+  return cells.length > 0 && cells.every((c) => /^:?-{2,}:?$/.test(c));
+}
+
+function renderTable(lines) {
+  const header = splitRow(lines[0]);
+  const aligns = splitRow(lines[1]).map((c) => {
+    if (/^:-+:$/.test(c)) return "center";
+    if (/^:-+$/.test(c)) return "left";
+    if (/^-+:$/.test(c)) return "right";
+    return "";
+  });
+  const body = lines.slice(2).map(splitRow);
+
+  const th = header
+    .map(
+      (c, i) =>
+        `<th${aligns[i] ? ` class="md-${aligns[i]}"` : ""}>${inline(c)}</th>`,
+    )
+    .join("");
+  const rows = body
+    .map(
+      (r) =>
+        "<tr>" +
+        header
+          .map((_, i) => {
+            const cell = r[i] == null ? "" : r[i];
+            return `<td${aligns[i] ? ` class="md-${aligns[i]}"` : ""}>${inline(cell)}</td>`;
+          })
+          .join("") +
+        "</tr>",
+    )
+    .join("");
+
+  return `<div class="md-table-wrap"><table class="md-table"><thead><tr>${th}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+// Rendu en ligne (gras, italique, code, liens) réutilisable dans les cellules.
+function inline(s) {
+  let t = escapeHtml(s);
+  t = t.replace(/`([^`\n]+)`/g, '<code class="md-inline">$1</code>');
+  t = t.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  t = t.replace(/__([^_\n]+)__/g, "<strong>$1</strong>");
+  t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  t = t.replace(/(^|[^_])_([^_\n]+)_/g, "$1<em>$2</em>");
+  t = t.replace(/~~([^~\n]+)~~/g, "<del>$1</del>");
+  t = t.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
+  );
+  return t;
 }
 
 function mdToHtml(src) {
@@ -573,7 +636,38 @@ function mdToHtml(src) {
   // 2) Échappe le reste.
   text = escapeHtml(text);
 
-  // 3) Titres (###, ##, #) en début de ligne.
+  // 3) Tableaux : lignes consécutives commençant par |, avec séparateur.
+  const tables = [];
+  {
+    const lines = text.split("\n");
+    const out = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (
+        /^\s*\|.*\|\s*$/.test(line) &&
+        i + 1 < lines.length &&
+        isTableSep(lines[i + 1])
+      ) {
+        const block = [];
+        let j = i;
+        while (j < lines.length && /^\s*\|.*\|\s*$/.test(lines[j])) {
+          block.push(lines[j]);
+          j++;
+        }
+        const k = tables.length;
+        tables.push(renderTable(block));
+        out.push(`\u0000TABLE${k}\u0000`);
+        i = j;
+        continue;
+      }
+      out.push(line);
+      i++;
+    }
+    text = out.join("\n");
+  }
+
+  // 4) Titres (###, ##, #) en début de ligne.
   text = text.replace(/^######\s+(.+)$/gm, '<h6 class="md-h">$1</h6>');
   text = text.replace(/^#####\s+(.+)$/gm, '<h6 class="md-h">$1</h6>');
   text = text.replace(/^####\s+(.+)$/gm, '<h5 class="md-h">$1</h5>');
@@ -581,17 +675,17 @@ function mdToHtml(src) {
   text = text.replace(/^##\s+(.+)$/gm, '<h3 class="md-h">$1</h3>');
   text = text.replace(/^#\s+(.+)$/gm, '<h2 class="md-h">$1</h2>');
 
-  // 4) Séparateur horizontal.
+  // 5) Séparateur horizontal.
   text = text.replace(/^\s*([-*_]){3,}\s*$/gm, '<hr class="md-hr">');
 
-  // 5) Citations.
+  // 6) Citations.
   text = text.replace(
     /^&gt;\s?(.+)$/gm,
     '<blockquote class="md-quote">$1</blockquote>',
   );
   text = text.replace(/<\/blockquote>\n<blockquote class="md-quote">/g, "<br>");
 
-  // 6) Listes à puces et ordonnées.
+  // 7) Listes à puces et ordonnées.
   text = text.replace(/^[-*]\s+(.+)$/gm, '<li class="md-li">$1</li>');
   text = text.replace(/^\d+\.\s+(.+)$/gm, '<li class="md-li">$1</li>');
   text = text.replace(
@@ -599,23 +693,23 @@ function mdToHtml(src) {
     '<ul class="md-ul">$1</ul>',
   );
 
-  // 7) Code inline.
+  // 8) Code inline.
   text = text.replace(/`([^`\n]+)`/g, '<code class="md-inline">$1</code>');
 
-  // 8) Gras, italique, barré.
+  // 9) Gras, italique, barré.
   text = text.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
   text = text.replace(/__([^_\n]+)__/g, "<strong>$1</strong>");
   text = text.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
   text = text.replace(/(^|[^_])_([^_\n]+)_/g, "$1<em>$2</em>");
   text = text.replace(/~~([^~\n]+)~~/g, "<del>$1</del>");
 
-  // 9) Liens [texte](url) — on n'autorise que http(s).
+  // 10) Liens [texte](url) — on n'autorise que http(s).
   text = text.replace(
     /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
     '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
   );
 
-  // 10) Sauts de ligne (hors structures de blocs).
+  // 11) Sauts de ligne (hors structures de blocs).
   text = text.replace(/\n/g, "<br>");
   text = text.replace(/([>])\s*<br>\s*(<li)/g, "$1$2"); // pas de <br> entre items
   text = text.replace(
@@ -626,7 +720,11 @@ function mdToHtml(src) {
   text = text.replace(/<br>(<\/(h[2-6]|ul|pre|blockquote|li)>)/g, "$1");
   text = text.replace(/<\/li><br>/g, "</li>");
 
-  // 11) Réinjecte les blocs de code.
+  // 12) Réinjecte les tableaux puis les blocs de code.
+  text = text.replace(
+    /\u0000TABLE(\d+)\u0000/g,
+    (_, i) => tables[Number(i)] || "",
+  );
   text = text.replace(
     /\u0000CODE(\d+)\u0000/g,
     (_, i) => codeBlocks[Number(i)] || "",
