@@ -2,9 +2,34 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <meta name="description" content="Mav — ton compagnon IA" />
     <title>Mav</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#2f6f5e" />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="192x192"
+      href="icons/icon-192.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="512x512"
+      href="icons/icon-512.png"
+    />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Mav" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -192,6 +217,20 @@
           <div class="watch" id="watchList"></div>
         </section>
       </main>
+    </div>
+
+    <!-- Bandeau d'installation PWA -->
+    <div class="install-banner" id="installBanner" hidden>
+      <div class="install-text">
+        <strong>Installer Mav</strong>
+        <span>Ajoute-la à ton écran d'accueil, comme une appli.</span>
+      </div>
+      <div class="install-actions">
+        <button class="install-btn" id="installBtn">Installer</button>
+        <button class="install-close" id="installClose" aria-label="Plus tard">
+          ×
+        </button>
+      </div>
     </div>
 
     <script src="assets/js/app.js"></script>
