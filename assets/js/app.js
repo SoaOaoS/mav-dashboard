@@ -422,10 +422,10 @@ $("#jobsList").addEventListener("click", async (e) => {
   if (run) {
     if (!LIVE) return toast("Disponible sur le live uniquement.");
     try {
-      const r = await api.post("job/run", { name: run.dataset.run });
-      toast(`Job lancé dans « ${r.title} »`);
-      await loadConvs();
-      openSession(r.session);
+      await api.post("job/run", { name: run.dataset.run });
+      toast(
+        `Job « ${run.dataset.run} » lancé — le rapport arrivera sur Telegram.`,
+      );
     } catch (_) {
       toast("Échec du lancement.");
     }
@@ -530,12 +530,42 @@ let CURRENT_AGENT = "";
 function renderAgentSelect() {
   const label = $("#chatAgentLabel");
   if (!label) return;
-  label.innerHTML = `agent <select id="agentSelect">${AGENTS.map((a) => `<option value="${esc(a)}"${a === CURRENT_AGENT ? " selected" : ""}>${esc(a)}</option>`).join("")}</select>`;
-  $("#agentSelect").addEventListener("change", (e) => {
-    CURRENT_AGENT = e.target.value;
+  label.innerHTML = `
+    <button type="button" class="agent-btn" id="agentBtn" title="Choisir l'agent">
+      <span class="agent-dot"></span>
+      <span class="agent-name">${esc(CURRENT_AGENT || "agent")}</span>
+      <span class="agent-caret">▾</span>
+    </button>
+    <div class="agent-menu" id="agentMenu" hidden>
+      ${AGENTS.map(
+        (a) =>
+          `<button type="button" class="agent-opt ${a === CURRENT_AGENT ? "is-sel" : ""}" data-agent="${esc(a)}">${esc(a)}</button>`,
+      ).join("")}
+    </div>`;
+  const btn = $("#agentBtn");
+  const menu = $("#agentMenu");
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    menu.hidden = !menu.hidden;
+    btn.classList.toggle("is-open", !menu.hidden);
+  });
+  menu.addEventListener("click", (e) => {
+    const opt = e.target.closest("[data-agent]");
+    if (!opt) return;
+    CURRENT_AGENT = opt.dataset.agent;
     localStorage.setItem("mav-agent", CURRENT_AGENT);
+    menu.hidden = true;
+    btn.classList.remove("is-open");
+    renderAgentSelect();
+    toast(`Agent : ${CURRENT_AGENT} (appliqué au prochain message)`);
   });
 }
+document.addEventListener("click", () => {
+  const menu = $("#agentMenu");
+  const btn = $("#agentBtn");
+  if (menu) menu.hidden = true;
+  if (btn) btn.classList.remove("is-open");
+});
 
 /* ---------- Chat & gestionnaire de sessions ---------- */
 const messages = $("#messages");
