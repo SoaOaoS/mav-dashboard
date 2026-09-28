@@ -3,7 +3,7 @@
    - Ne met JAMAIS en cache /api/* : l'état de l'agent doit rester temps réel.
 */
 
-const CACHE = "mav-shell-v1";
+const CACHE = "mav-shell-v2";
 const SHELL = [
   "./",
   "./index.html",
@@ -68,5 +68,37 @@ self.addEventListener("fetch", (e) => {
         })
         .catch(() => hit);
     }),
+  );
+});
+
+/* ---------- Web Push ---------- */
+self.addEventListener("push", (event) => {
+  let data = { title: "Mav", body: "Nouvelle alerte.", url: "./" };
+  try {
+    if (event.data) data = Object.assign(data, event.data.json());
+  } catch (_) {}
+  event.waitUntil(
+    self.registration.showNotification(data.title || "Mav", {
+      body: data.body || "",
+      icon: "icons/icon-192.png",
+      badge: "icons/icon-192.png",
+      data: { url: data.url || "./" },
+      tag: data.tag || undefined,
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "./";
+  event.waitUntil(
+    clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((list) => {
+        for (const c of list) {
+          if ("focus" in c) return c.focus();
+        }
+        if (clients.openWindow) return clients.openWindow(url);
+      }),
   );
 });
