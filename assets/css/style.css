@@ -1,5 +1,5 @@
 :root {
-  --bg: #f7f6f3;
+  --bg: #eef1f4;
   --bg-soft: #ffffff;
   --ink: #1c1b19;
   --ink-2: #55524c;
@@ -21,6 +21,17 @@
   --radius-sm: 12px;
   --font: "Inter", system-ui, -apple-system, sans-serif;
   --display: "Fraunces", Georgia, serif;
+
+  /* ---- Glass (iOS 26) ---- */
+  --glass-bg: rgba(255, 255, 255, 0.62);
+  --glass-bg-strong: rgba(255, 255, 255, 0.74);
+  --glass-brd: rgba(255, 255, 255, 0.7);
+  --glass-brd-soft: rgba(255, 255, 255, 0.45);
+  --glass-highlight: rgba(255, 255, 255, 0.85);
+  --glass-shadow:
+    0 1px 1px rgba(20, 30, 40, 0.05), 0 10px 30px rgba(20, 40, 60, 0.1),
+    inset 0 1px 0 var(--glass-highlight);
+  --glass-blur: 22px;
 }
 
 * {
@@ -47,6 +58,46 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* Fond vivant : halos colorés fixes que le verre vient flouter */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -20%;
+  z-index: -1;
+  background:
+    radial-gradient(
+      42% 38% at 18% 12%,
+      rgba(124, 196, 172, 0.75),
+      transparent 62%
+    ),
+    radial-gradient(
+      38% 34% at 85% 18%,
+      rgba(122, 162, 222, 0.6),
+      transparent 60%
+    ),
+    radial-gradient(
+      46% 42% at 78% 82%,
+      rgba(226, 170, 120, 0.55),
+      transparent 64%
+    ),
+    radial-gradient(
+      40% 36% at 22% 86%,
+      rgba(160, 210, 190, 0.6),
+      transparent 62%
+    ),
+    linear-gradient(160deg, #eef2f5, #e7edf0 55%, #e9eef1);
+  filter: saturate(1.05);
+  animation: aurora 22s ease-in-out infinite alternate;
+}
+@keyframes aurora {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    transform: translate3d(-2%, -2%, 0) scale(1.06);
+  }
+}
+
 /* ---------- Bandeau d'installation PWA ---------- */
 .install-banner {
   position: fixed;
@@ -59,10 +110,12 @@ body {
   gap: 1rem;
   width: min(520px, calc(100% - 2rem));
   padding: 0.85rem 1rem;
-  background: var(--bg-soft);
-  border: 1px solid var(--line);
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-brd);
   border-radius: var(--radius);
-  box-shadow: 0 12px 40px rgba(28, 27, 25, 0.18);
+  box-shadow: var(--glass-shadow);
   animation: rise 0.35s ease;
 }
 .install-text {
@@ -1046,6 +1099,135 @@ body.is-thinking .orb::before {
   }
   30% {
     opacity: 1;
+  }
+}
+
+/* ---------- GLASS (iOS 26) ----------
+   Surfaces en verre dépoli : translucides, floutées, avec liseré lumineux.
+   On surcharge ici les fonds des composants pour garder le reste intact. */
+
+.sidebar {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border-right: 1px solid var(--glass-brd-soft);
+}
+
+.composer,
+.chip,
+.stat,
+.card,
+.conv-sidebar,
+.job,
+.wcard,
+.bubble,
+.mem-item {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-brd);
+  box-shadow: var(--glass-shadow);
+}
+
+/* Cartes plus opaques pour la lisibilité du texte long */
+.card,
+.chat-card {
+  --glass-bg: rgba(255, 255, 255, 0.68);
+}
+
+.card {
+  background: var(--glass-bg-strong);
+}
+
+.job,
+.wcard,
+.stat {
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.job:hover,
+.wcard:hover,
+.stat:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 2px 2px rgba(20, 30, 40, 0.05),
+    0 16px 38px rgba(20, 40, 60, 0.14),
+    inset 0 1px 0 var(--glass-highlight);
+}
+
+/* Barres de nav : état actif en verre teinté */
+.nav-item.is-active {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(10px) saturate(180%);
+  -webkit-backdrop-filter: blur(10px) saturate(180%);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    0 2px 8px rgba(20, 40, 60, 0.08);
+}
+.conv-item.is-active {
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+}
+
+/* Le fil de chat : fond légèrement dépoli pour détacher les bulles */
+.chat-card {
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(26px) saturate(180%);
+  -webkit-backdrop-filter: blur(26px) saturate(180%);
+  border: 1px solid var(--glass-brd);
+  box-shadow: var(--glass-shadow);
+}
+.msg.mav .bubble {
+  background: rgba(255, 255, 255, 0.72);
+}
+.msg.me .bubble {
+  background: linear-gradient(160deg, #34795f, #2f6f5e);
+  box-shadow:
+    0 6px 18px rgba(47, 111, 94, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  border: none;
+}
+
+/* Boutons / pastilles en verre */
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.6);
+}
+.pill.on {
+  background: rgba(230, 240, 236, 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.mtag {
+  background: rgba(246, 236, 227, 0.8);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Champs de saisie */
+.composer input {
+  background: transparent;
+}
+.install-btn {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+/* Repli : si le navigateur ne supporte pas backdrop-filter, on opacifie. */
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  .sidebar,
+  .composer,
+  .chip,
+  .stat,
+  .card,
+  .conv-sidebar,
+  .job,
+  .wcard,
+  .bubble,
+  .mem-item,
+  .chat-card {
+    background: rgba(255, 255, 255, 0.94);
   }
 }
 
