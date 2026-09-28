@@ -29,6 +29,18 @@ const MOCK = {
       enabled: true,
     },
   ],
+  jobResults: [
+    {
+      name: "point-marche",
+      updated: 0,
+      text: "Ouverture européenne prudente, indices +0,3 %. Or à 2 640 $/oz, pétrole stable. Synthèse : rester défensif sur les taux.",
+    },
+    {
+      name: "revue-matin",
+      updated: 0,
+      text: "2 PRs ouvertes à relire, CI verte, aucune dépendance vulnérable critique.",
+    },
+  ],
   agents: ["research", "dev", "finance", "ops", "writer"],
   today: [
     { t: "09:00", text: "Point marchés envoyé." },
@@ -268,6 +280,34 @@ function renderMiniJobs(jobs) {
     )
     .join("");
 }
+
+function renderJobResults(results) {
+  const box = $("#jobResults");
+  if (!box) return;
+  const list = results || [];
+  if (!list.length) {
+    box.innerHTML = `<div class="jr-empty">Aucun résultat de job pour l'instant.</div>`;
+    return;
+  }
+  box.innerHTML = list
+    .map(
+      (r) => `
+    <div class="jr-item" data-jr>
+      <div class="jr-head">
+        <span class="jr-name">${esc(r.name)}</span>
+        <span class="jr-time">${r.updated ? esc(fmtTime(r.updated)) + " · " + esc(fmtDate(Math.floor(r.updated / 1000))) : ""}</span>
+      </div>
+      <div class="jr-preview">${esc(r.text)}</div>
+    </div>`,
+    )
+    .join("");
+}
+
+// Clic sur un résultat de job : déplie / replie l'aperçu.
+$("#jobResults").addEventListener("click", (e) => {
+  const item = e.target.closest("[data-jr]");
+  if (item) item.classList.toggle("is-open");
+});
 
 function renderJobs(jobs) {
   $("#jobsList").innerHTML = (jobs || [])
@@ -1042,20 +1082,23 @@ welcome();
 /* ---------- Chargement ---------- */
 async function loadLive() {
   try {
-    const [status, conns, jobs, mem, watch, agents] = await Promise.all([
-      api.get("status"),
-      api.get("connections"),
-      api.get("jobs"),
-      api.get("memory"),
-      api.get("watch"),
-      api.get("agents"),
-    ]);
+    const [status, conns, jobs, mem, watch, agents, jobResults] =
+      await Promise.all([
+        api.get("status"),
+        api.get("connections"),
+        api.get("jobs"),
+        api.get("memory"),
+        api.get("watch"),
+        api.get("agents"),
+        api.get("job-results"),
+      ]);
     LIVE = true;
     document.body.dataset.mode = "live";
     renderStatus(status);
     renderConnections(conns.connections || []);
     renderJobs(jobs.jobs || []);
     renderMiniJobs(jobs.jobs || []);
+    renderJobResults(jobResults.results || []);
     CACHED_MEMORY = mem;
     renderMemory(mem);
     renderWatch(watch);
@@ -1080,6 +1123,7 @@ async function loadLive() {
     renderConnections(MOCK.connections);
     renderJobs(MOCK.jobs);
     renderMiniJobs(MOCK.jobs);
+    renderJobResults(MOCK.jobResults);
     CACHED_MEMORY = MOCK.memory;
     renderMemory(MOCK.memory);
     renderWatch(MOCK.watch);
