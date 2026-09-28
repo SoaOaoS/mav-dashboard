@@ -94,6 +94,13 @@ MAV_STATIC="$PWD" BOT_DIR="$HOME/bot" \
 - **Souvenirs** — ce que Mav retient (conversations, faits, préférences).
 - **Surveillance** — ce que Mav surveille, alerte seulement au changement.
 
+## Design
+
+Feuilles de style « glass » façon iOS 26 : surfaces en verre dépoli
+(`backdrop-filter`), halos colorés animés en fond, liserés lumineux, ombres
+douces. Repli automatique sur fond opaque si `backdrop-filter` n'est pas
+supporté.
+
 ## PWA (installation sur mobile)
 
 L'app est installable comme une appli native : `manifest.webmanifest`,
@@ -102,6 +109,9 @@ service worker (`sw.js`), icônes et bandeau d'installation.
 **Contrainte** : le service worker et l'installabilité exigent un **contexte
 sécurisé** (HTTPS, ou `localhost`). En HTTP sur une IP, Chrome n'expose pas
 `navigator.serviceWorker` et l'install n'est pas proposée.
+
+- **Mock GitHub Pages** : déjà en HTTPS → installable directement.
+- **Live sur le VLAN** : HTTP sur IP → il faut le TLS local décrit ci-dessous.
 
 ### TLS local
 
