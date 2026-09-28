@@ -1046,7 +1046,7 @@ class Handler(BaseHTTPRequestHandler):
         rel = path.lstrip("/").replace("..", "")
         if rel.endswith((".key", ".csr", ".srl")):
             return self._send(404, "not found", "text/plain")
-        if rel.startswith("certs/") and rel != "certs/ca.crt":
+        if rel.startswith("certs/") and rel not in ("certs/ca.crt", "certs/ca.cer"):
             return self._send(404, "not found", "text/plain")
         target = (STATIC_DIR / rel).resolve()
         if not str(target).startswith(str(STATIC_DIR.resolve())) or not target.is_file():
@@ -1061,6 +1061,8 @@ class Handler(BaseHTTPRequestHandler):
             ".json": "application/json",
             ".ico": "image/x-icon",
             ".crt": "application/x-x509-ca-cert",
+            ".cer": "application/x-x509-ca-cert",
+            ".pem": "application/x-pem-file",
         }.get(target.suffix, "application/octet-stream")
         return self._send(200, target.read_bytes(), ctype)
 
