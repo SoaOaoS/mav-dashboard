@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 *.log
 *.pid
+
+# Secrets : ne jamais committer les clés TLS
+certs/
