@@ -2446,3 +2446,47 @@ body.is-thinking .orb::before {
 .md-chart.is-down {
   border-left: 3px solid #d9534f;
 }
+
+/* ---------- Images dans les messages ---------- */
+.bubble .md-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.55rem 0;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  box-shadow: 0 4px 16px rgba(20, 40, 60, 0.08);
+  cursor: zoom-in;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.bubble .md-img:hover {
+  transform: scale(1.01);
+  box-shadow: 0 8px 26px rgba(20, 40, 60, 0.14);
+}
+.jr-preview .md-img {
+  max-width: 100%;
+  border-radius: 10px;
+  margin: 0.4rem 0;
+}
+
+/* ---------- Lightbox ---------- */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(15, 25, 33, 0.75);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  cursor: zoom-out;
+  animation: rise 0.2s ease;
+}
+.lightbox img {
+  max-width: 100%;
+  max-height: 92vh;
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
