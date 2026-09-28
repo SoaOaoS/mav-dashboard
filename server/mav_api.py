@@ -29,6 +29,10 @@ from pathlib import Path
 
 PORT = int(os.environ.get("MAV_API_PORT", "8787"))
 BIND = os.environ.get("MAV_API_BIND", "0.0.0.0")
+# TLS optionnel : nécessaire pour que la PWA soit installable (contexte sécurisé).
+TLS_PORT = int(os.environ.get("MAV_TLS_PORT", "0") or 0)
+TLS_CERT = os.environ.get("MAV_TLS_CERT", "")
+TLS_KEY = os.environ.get("MAV_TLS_KEY", "")
 
 BOT_DIR = Path(os.environ.get("BOT_DIR", Path.home() / "bot"))
 JOBS_FILE = BOT_DIR / "jobs.json"
@@ -548,6 +552,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/":
             path = "/index.html"
         rel = path.lstrip("/").replace("..", "")
+        # Ne jamais servir de secret : clés, ou tout le dossier certs sauf la CA.
+        if rel.endswith(".key") or rel.endswith(".csr") or rel.endswith(".srl"):
+            return self._send(404, "not found", "text/plain")
+        if rel.startswith("certs/") and rel != "certs/ca.crt":
+            return self._send(404, "not found", "text/plain")
         target = (STATIC_DIR / rel).resolve()
         if not str(target).startswith(str(STATIC_DIR.resolve())) or not target.is_file():
             return self._send(404, "not found", "text/plain")
@@ -560,13 +569,31 @@ class Handler(BaseHTTPRequestHandler):
             ".webmanifest": "application/manifest+json",
             ".json": "application/json",
             ".ico": "image/x-icon",
+            ".crt": "application/x-x509-ca-cert",
+            ".pem": "application/x-pem-file",
         }.get(target.suffix, "application/octet-stream")
         return self._send(200, target.read_bytes(), ctype)
 
 
 def main():
+    import ssl
+    import threading
+
     srv = ThreadingHTTPServer((BIND, PORT), Handler)
     print(f"mav-api en écoute sur http://{BIND}:{PORT} (statique: {STATIC_DIR})", flush=True)
+
+    # Second listener HTTPS (pour rendre la PWA installable).
+    if TLS_PORT and TLS_CERT and TLS_KEY:
+        try:
+            tsrv = ThreadingHTTPServer((BIND, TLS_PORT), Handler)
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.load_cert_chain(TLS_CERT, TLS_KEY)
+            tsrv.socket = ctx.wrap_socket(tsrv.socket, server_side=True)
+            threading.Thread(target=tsrv.serve_forever, daemon=True).start()
+            print(f"mav-api en écoute sur https://{BIND}:{TLS_PORT}", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"TLS indisponible: {exc}", flush=True)
+
     srv.serve_forever()
 
 
