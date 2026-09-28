@@ -46,20 +46,35 @@ session Telegram, pour ne jamais perturber le bot qui tourne en parallèle.
 
 ## API
 
-| Méthode | Route                 | Rôle                                |
-| ------- | --------------------- | ----------------------------------- |
-| GET     | `/api/status`         | santé moteur, métriques, compteurs  |
-| GET     | `/api/jobs`           | jobs planifiés + dernière exécution |
-| GET     | `/api/memory`         | conversations, facts, préférences   |
-| GET     | `/api/watch`          | items surveillés                    |
-| GET     | `/api/agents`         | agents disponibles                  |
-| GET     | `/api/connections`    | état des services                   |
-| GET     | `/api/sessions`       | liste des discussions du dashboard  |
-| GET     | `/api/session?id=`    | messages + titre d'une discussion   |
-| POST    | `/api/ask`            | envoie un prompt (param. `session`) |
-| POST    | `/api/session/new`    | crée une discussion                 |
-| POST    | `/api/session/rename` | renomme une discussion              |
-| POST    | `/api/session/delete` | supprime une discussion             |
+| Méthode | Route                     | Rôle                                 |
+| ------- | ------------------------- | ------------------------------------ |
+| GET     | `/api/status`             | santé moteur, métriques, compteurs   |
+| GET     | `/api/connections`        | état des services                    |
+| GET     | `/api/proxmox`            | nœuds et VMs (Proxmox)               |
+| GET     | `/api/jobs`               | jobs planifiés + dernière exécution  |
+| GET     | `/api/memory`             | conversations, facts, préférences    |
+| GET     | `/api/search?q=`          | recherche mémoire + documents        |
+| GET     | `/api/watch`              | items surveillés                     |
+| GET     | `/api/agents`             | agents disponibles                   |
+| GET     | `/api/sessions`           | liste des discussions du dashboard   |
+| GET     | `/api/session?id=`        | messages + titre d'une discussion    |
+| GET     | `/api/session/export?id=` | export markdown d'une discussion     |
+| GET     | `/api/stream`             | **SSE** : réponse en streaming       |
+| GET     | `/api/push/key`           | clé publique VAPID                   |
+| POST    | `/api/ask`                | envoie un prompt (bloquant)          |
+| POST    | `/api/session/new`        | crée une discussion                  |
+| POST    | `/api/session/rename`     | renomme une discussion               |
+| POST    | `/api/session/delete`     | supprime une discussion              |
+| POST    | `/api/session/abort`      | stoppe la génération en cours        |
+| POST    | `/api/session/summary`    | résume une discussion                |
+| POST    | `/api/job/toggle`         | active / met en pause un job         |
+| POST    | `/api/job/run`            | lance un job dans une session dédiée |
+| POST    | `/api/watch/add`          | ajoute une surveillance              |
+| POST    | `/api/watch/remove`       | retire une surveillance              |
+| POST    | `/api/upload`             | pièce jointe (base64 → fichier)      |
+| POST    | `/api/push/subscribe`     | abonnement Web Push                  |
+| POST    | `/api/push/unsubscribe`   | désabonnement                        |
+| POST    | `/api/push/test`          | notification de test                 |
 
 ### Sessions
 
@@ -89,17 +104,28 @@ MAV_STATIC="$PWD" BOT_DIR="$HOME/bot" \
 ## Écrans
 
 - **Accueil** — salutation, barre de message, raccourcis, résumé du jour, automatisations.
-- **Discussions** — gestionnaire de conversations (créer, renommer, supprimer, basculer) + chat avec l'agent.
-- **Automatisations** — jobs planifiés, planning, état.
-- **Souvenirs** — ce que Mav retient (conversations, faits, préférences).
-- **Surveillance** — ce que Mav surveille, alerte seulement au changement.
+- **Discussions** — gestionnaire de conversations (créer, renommer, supprimer, basculer) + chat **en streaming** avec l'agent, sélecteur d'agent par discussion, pièces jointes, stop, résumé, export markdown.
+- **Automatisations** — jobs planifiés + actions : lancer un job, l'activer/mettre en pause.
+- **Souvenirs** — mémoire (conversations, faits, préférences) + recherche plein-texte.
+- **Surveillance** — items surveillés, ajout/retrait, alerte seulement au changement.
+- **Infra** — nœuds et VMs Proxmox en direct (CPU, RAM, uptime, état).
+
+## Fonctionnalités
+
+- **Streaming SSE** : les réponses arrivent mot à mot, avec progression des outils et un bouton stop.
+- **Palette de commandes** (`⌘K` / `Ctrl+K`) : chercher une discussion, un souvenir, une action.
+- **Thème clair / sombre** avec bascule et mémorisation.
+- **Voix** : dictée (Web Speech) et lecture à voix haute des réponses.
+- **Notifications Web Push** : Mav pousse les alertes de veille sur le téléphone, app fermée.
+- **Recherche globale** dans la mémoire et les documents indexés.
+- **Export / résumé** d'une conversation.
 
 ## Design
 
 Feuilles de style « glass » façon iOS 26 : surfaces en verre dépoli
 (`backdrop-filter`), halos colorés animés en fond, liserés lumineux, ombres
-douces. Repli automatique sur fond opaque si `backdrop-filter` n'est pas
-supporté.
+douces, thème sombre assorti. Repli automatique sur fond opaque si
+`backdrop-filter` n'est pas supporté.
 
 ## PWA (installation sur mobile)
 
