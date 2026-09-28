@@ -44,6 +44,75 @@ body {
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
   line-height: 1.5;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* ---------- Bandeau d'installation PWA ---------- */
+.install-banner {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: min(520px, calc(100% - 2rem));
+  padding: 0.85rem 1rem;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 40px rgba(28, 27, 25, 0.18);
+  animation: rise 0.35s ease;
+}
+.install-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+.install-text strong {
+  font-size: 0.95rem;
+}
+.install-text span {
+  font-size: 0.82rem;
+  color: var(--ink-3);
+}
+.install-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.install-btn {
+  font-family: var(--font);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 999px;
+  padding: 0.55rem 1.1rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.install-btn:hover {
+  background: var(--accent-ink);
+}
+.install-close {
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: none;
+  color: var(--ink-3);
+  font-size: 1.25rem;
+  cursor: pointer;
+  border-radius: 50%;
+  line-height: 1;
+}
+.install-close:hover {
+  background: var(--line-2);
+  color: var(--ink);
 }
 
 .app {
