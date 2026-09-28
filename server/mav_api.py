@@ -811,7 +811,124 @@ def save_upload(name: str, data_b64: str, mime: str = "") -> dict:
     mt = mime or mimetypes.guess_type(safe)[0] or "application/octet-stream"
     if mt == "application/octet-stream":
         mt = _mime_from_ext(safe)
-    return {"url": f"file://{dest}", "mime": mt, "filename": safe}
+    # Archive persistante : les pièces jointes envoyées par Raphaël restent
+    # disponibles pour que Mav puisse les renvoyer plus tard.
+    archived = archive_media(dest, safe, mt, source="upload")
+    return {
+        "url": f"file://{dest}",
+        "mime": mt,
+        "filename": safe,
+        "media_id": archived.get("id") if archived else None,
+        "media_path": archived.get("path") if archived else None,
+    }
+
+
+# --------------------------------------------------------------- media
+# Dossier média PERSISTANT (survit aux reboots, contrairement à /tmp) + index
+# JSON. Sert à : (1) archiver les pièces jointes reçues, (2) garder les images
+# générées, (3) permettre à Mav de renvoyer n'importe quel fichier par son id.
+MEDIA_DIR = Path(os.environ.get("MAV_MEDIA", BOT_DIR / "mav-media"))
+MEDIA_INDEX = MEDIA_DIR / "index.json"
+
+
+def _media_load() -> list:
+    try:
+        data = json.loads(MEDIA_INDEX.read_text())
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _media_save(items: list) -> None:
+    try:
+        MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = MEDIA_INDEX.with_suffix(".tmp")
+        tmp.write_text(json.dumps(items[-500:], ensure_ascii=False, indent=1))
+        tmp.replace(MEDIA_INDEX)
+    except Exception:
+        pass
+
+
+def archive_media(src: Path, name: str, mime: str, source: str = "", size: int = 0, mtime: int = 0) -> dict | None:
+    """Copie un fichier dans le dossier média persistant et l'indexe."""
+    try:
+        MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+        safe = re.sub(r"[^A-Za-z0-9._-]", "_", name or "fichier")[:120] or "fichier"
+        media_id = f"{int(time.time() * 1000)}-{safe}"
+        dest = MEDIA_DIR / media_id
+        if Path(src).resolve() != dest.resolve():
+            dest.write_bytes(Path(src).read_bytes())
+        try:
+            st = Path(src).stat()
+            size = size or st.st_size
+            mtime = mtime or int(st.st_mtime)
+        except Exception:
+            pass
+        entry = {
+            "id": media_id,
+            "name": safe,
+            "mime": mime,
+            "source": source,
+            "ts": int(time.time()),
+            "size": size,
+            "mtime": mtime,
+            "path": str(dest),
+        }
+        items = _media_load()
+        items = [i for i in items if i.get("id") != media_id]
+        items.append(entry)
+        _media_save(items)
+        return entry
+    except Exception:
+        return None
+
+
+def list_media(limit: int = 60) -> dict:
+    items = _media_load()
+    items.sort(key=lambda x: x.get("ts", 0), reverse=True)
+    return {"media": items[:limit]}
+
+
+def find_media(query: str) -> list:
+    """Retrouve des médias par nom (insensible à la casse)."""
+    q = (query or "").strip().lower()
+    if not q:
+        return []
+    items = _media_load()
+    hits = [i for i in items if q in str(i.get("name", "")).lower()]
+    hits.sort(key=lambda x: x.get("ts", 0), reverse=True)
+    return hits
+
+
+def sync_media_dir() -> int:
+    """Archive les images présentes dans /tmp/mav-dashboard qui n'y sont pas
+    déjà. Appelée avant l'affichage d'un média, pour que toute image générée
+    (capture Puppeteer, graphe…) soit persistée automatiquement."""
+    src_dir = Path("/tmp/mav-dashboard")
+    if not src_dir.is_dir():
+        return 0
+    # Dédoublonnage par (nom, taille, mtime) : un même fichier n'est archivé
+    # qu'une fois, même si son nom reste identique entre deux générations.
+    items = _media_load()
+    known = {(i.get("name"), i.get("size"), i.get("mtime")) for i in items}
+    added = 0
+    try:
+        for f in src_dir.iterdir():
+            if not f.is_file() or f.suffix.lower() not in ASSET_EXT:
+                continue
+            try:
+                st = f.stat()
+            except Exception:
+                continue
+            key = (f.name, st.st_size, int(st.st_mtime))
+            if key in known:
+                continue
+            if archive_media(f, f.name, mimetypes.guess_type(f.name)[0] or "image/png", "generated", size=st.st_size, mtime=int(st.st_mtime)):
+                known.add(key)
+                added += 1
+    except Exception:
+        pass
+    return added
 
 
 # --------------------------------------------------------------- assets
@@ -820,6 +937,8 @@ def save_upload(name: str, data_b64: str, mime: str = "") -> dict:
 # de racines, pour ne jamais exposer un fichier arbitraire.
 ASSET_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif"}
 ASSET_ROOTS = [
+    MEDIA_DIR,
+    ATTACH_DIR,
     Path("/tmp/mav-dashboard"),
     Path("/tmp/opencode"),
     Path(BOT_DIR).resolve() if BOT_DIR.exists() else Path("/home/opencode/bot"),
@@ -1247,6 +1366,32 @@ class Handler(BaseHTTPRequestHandler):
                 res = serve_asset(p.get("path", ""))
                 if not res:
                     return self._send(404, "asset introuvable", "text/plain")
+                data, mime = res
+                return self._send(200, data, mime)
+            if path == "/api/media":
+                sync_media_dir()
+                return self._send(200, list_media())
+            if path == "/api/media/find":
+                sync_media_dir()
+                return self._send(200, {"media": find_media(p.get("q", ""))})
+            if path == "/api/media/get":
+                mid = p.get("id", "")
+                hit = next((i for i in _media_load() if i.get("id") == mid), None)
+                if not hit:
+                    return self._send(404, "media introuvable", "text/plain")
+                res = serve_asset(hit["path"])
+                if not res:
+                    return self._send(404, "media introuvable", "text/plain")
+                data, mime = res
+                return self._send(200, data, mime)
+            if path == "/api/media/by-name":
+                name = p.get("name", "")
+                hits = find_media(name)
+                if not hits:
+                    return self._send(404, "media introuvable", "text/plain")
+                res = serve_asset(hits[0]["path"])
+                if not res:
+                    return self._send(404, "media introuvable", "text/plain")
                 data, mime = res
                 return self._send(200, data, mime)
             if path == "/api/quotes":
