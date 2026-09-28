@@ -1330,8 +1330,8 @@ body.is-thinking .orb::before {
   padding: 0 0.2rem;
 }
 .side-tool {
-  flex: 1;
-  aspect-ratio: 1;
+  width: 46px;
+  height: 46px;
   display: grid;
   place-items: center;
   border: 1px solid var(--glass-brd);
