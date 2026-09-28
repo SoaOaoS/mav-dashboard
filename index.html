@@ -112,34 +112,50 @@
 
         <!-- CHAT -->
         <section class="view" id="view-chat">
-          <header class="view-head">
-            <h1>Discussions</h1>
-            <p>Un fil simple, en continu. Je garde le contexte.</p>
-          </header>
-          <div class="card chat-card">
-            <div class="messages" id="messages"></div>
-            <div class="typing" id="typing" hidden>
-              <span></span><span></span><span></span>
-            </div>
-            <form class="composer" id="chatForm" autocomplete="off">
-              <input
-                type="text"
-                id="chatInput"
-                placeholder="Écris un message…"
-                aria-label="Message"
-              />
-              <button type="submit" class="send" aria-label="Envoyer">
-                <span class="nav-ico" data-ico="send"></span>
+          <div class="chat-layout">
+            <!-- Liste des conversations -->
+            <aside class="conv-sidebar">
+              <button class="new-conv" id="newConv">
+                <span class="nav-ico" data-ico="plus"></span> Nouvelle
+                discussion
               </button>
-            </form>
-            <div class="chips" id="chatChips">
-              <button class="chip" data-cmd="statut">Statut</button>
-              <button class="chip" data-cmd="automatisations">
-                Automatisations
-              </button>
-              <button class="chip" data-cmd="souvenirs">Souvenirs</button>
-              <button class="chip" data-cmd="surveillance">Surveillance</button>
-              <button class="chip" data-cmd="marches">Marchés</button>
+              <div class="conv-list" id="convList"></div>
+            </aside>
+
+            <!-- Fil de discussion -->
+            <div class="card chat-card">
+              <div class="chat-head">
+                <h2 id="chatTitle">Nouvelle discussion</h2>
+                <button class="icon-btn" id="renameBtn" title="Renommer">
+                  <span class="nav-ico" data-ico="edit"></span>
+                </button>
+              </div>
+              <div class="messages" id="messages"></div>
+              <div class="typing" id="typing" hidden>
+                <span></span><span></span><span></span>
+              </div>
+              <form class="composer" id="chatForm" autocomplete="off">
+                <input
+                  type="text"
+                  id="chatInput"
+                  placeholder="Écris un message…"
+                  aria-label="Message"
+                />
+                <button type="submit" class="send" aria-label="Envoyer">
+                  <span class="nav-ico" data-ico="send"></span>
+                </button>
+              </form>
+              <div class="chips" id="chatChips">
+                <button class="chip" data-cmd="statut">Statut</button>
+                <button class="chip" data-cmd="automatisations">
+                  Automatisations
+                </button>
+                <button class="chip" data-cmd="souvenirs">Souvenirs</button>
+                <button class="chip" data-cmd="surveillance">
+                  Surveillance
+                </button>
+                <button class="chip" data-cmd="marches">Marchés</button>
+              </div>
             </div>
           </div>
         </section>
