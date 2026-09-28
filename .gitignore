@@ -3,5 +3,8 @@ __pycache__/
 *.log
 *.pid
 
-# Secrets : ne jamais committer les clés TLS
+# Secrets
 certs/
+
+# venv dédié au backend
+server/venv/
