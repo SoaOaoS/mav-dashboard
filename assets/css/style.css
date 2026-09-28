@@ -1964,10 +1964,18 @@ body.is-thinking .orb::before {
     padding: 0.5rem 0.65rem;
   }
   .conv-item .ctitle {
-    max-width: 44vw;
+    max-width: 42vw;
   }
+  /* Sur tactile : la poubelle est toujours visible et assez grande. */
   .conv-item .cdel {
-    opacity: 0.6;
+    opacity: 1;
+    width: 34px;
+    height: 34px;
+    flex: none;
+  }
+  .conv-item .cdel .nav-ico {
+    width: 17px;
+    height: 17px;
   }
   .conv-empty {
     white-space: nowrap;
@@ -2063,4 +2071,103 @@ body.is-thinking .orb::before {
   .stats {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* ============================================================
+   PERF — mobile
+   Le fond animé + les flous partout saturent le GPU des téléphones
+   et provoquent des saccades. En dessous de 900px on allège :
+   fond statique, flous légers, animations secondaires coupées.
+   ============================================================ */
+@media (max-width: 900px) {
+  body::before {
+    animation: none;
+    filter: none;
+  }
+  .hud-panel,
+  .composer,
+  .chip,
+  .stat,
+  .card,
+  .conv-sidebar,
+  .job,
+  .wcard,
+  .bubble,
+  .mem-item,
+  .chat-card,
+  .mobile-top,
+  .tabbar,
+  .side-search,
+  .search-inline,
+  .watch-add select,
+  .watch-add input,
+  .palette-box {
+    backdrop-filter: blur(8px) saturate(140%);
+    -webkit-backdrop-filter: blur(8px) saturate(140%);
+  }
+  /* Animations continues : coupées pour libérer le GPU. */
+  .orb,
+  .orb::before,
+  .orb::after,
+  .msg.mav .avatar,
+  .dot-online {
+    animation: none;
+  }
+}
+
+/* ---------- Résultats des jobs (accueil) ---------- */
+.job-results-card {
+  margin-top: 1rem;
+}
+.job-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+.jr-item {
+  border-left: 2px solid var(--accent);
+  background: rgba(255, 255, 255, 0.45);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 0.7rem 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.jr-item:hover {
+  background: rgba(255, 255, 255, 0.72);
+}
+.jr-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.3rem;
+}
+.jr-name {
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+.jr-time {
+  font-size: 0.74rem;
+  color: var(--ink-3);
+  flex: none;
+}
+.jr-preview {
+  font-size: 0.85rem;
+  color: var(--ink-2);
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.jr-item.is-open .jr-preview {
+  -webkit-line-clamp: unset;
+  display: block;
+}
+.jr-empty {
+  font-size: 0.85rem;
+  color: var(--ink-3);
+  padding: 0.3rem 0;
 }
