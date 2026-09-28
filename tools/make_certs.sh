@@ -21,10 +21,15 @@ openssl req -newkey rsa:2048 -sha256 -nodes \
 cat > san.cnf <<EOF
 subjectAltName=IP:${SAN_IP},DNS:${SAN_DNS}
 extendedKeyUsage=serverAuth
+keyUsage=digitalSignature,keyEncipherment
 EOF
 
+# 397 jours : au-delà de 398, Chrome/Android rejettent le certificat.
 openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
-  -out server.crt -days 3650 -sha256 -extfile san.cnf
+  -out server.crt -days 397 -sha256 -extfile san.cnf
+
+# Version DER pour l'installation sur Android (fichier .cer).
+openssl x509 -in ca.crt -outform DER -out ca.cer
 
 chmod 600 ./*.key
 echo "Certificats générés dans $DIR"
