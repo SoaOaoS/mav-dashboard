@@ -94,6 +94,36 @@ MAV_STATIC="$PWD" BOT_DIR="$HOME/bot" \
 - **Souvenirs** — ce que Mav retient (conversations, faits, préférences).
 - **Surveillance** — ce que Mav surveille, alerte seulement au changement.
 
+## PWA (installation sur mobile)
+
+L'app est installable comme une appli native : `manifest.webmanifest`,
+service worker (`sw.js`), icônes et bandeau d'installation.
+
+**Contrainte** : le service worker et l'installabilité exigent un **contexte
+sécurisé** (HTTPS, ou `localhost`). En HTTP sur une IP, Chrome n'expose pas
+`navigator.serviceWorker` et l'install n'est pas proposée.
+
+### TLS local
+
+Le service écoute en **HTTP :80** _et_ **HTTPS :443** avec un certificat local
+(`certs/`, non committé). Le dossier `certs/` n'est jamais servi, sauf la CA
+publique `certs/ca.crt`.
+
+Pour installer sur le téléphone (une fois sur le VLAN) :
+
+1. Ouvrir `https://192.168.1.32/certs/ca.crt` et approuver le certificat.
+2. Ouvrir `https://192.168.1.32/`, puis « Ajouter à l'écran d'accueil ».
+
+Variables d'env. du serveur : `MAV_TLS_PORT`, `MAV_TLS_CERT`, `MAV_TLS_KEY`
+(laisser `MAV_TLS_PORT=0` pour désactiver le TLS).
+
+### Régénérer le certificat
+
+```bash
+python3 tools/make_icons.py          # icônes
+tools/make_certs.sh                  # CA + cert serveur (SAN: IP/DNS à ajuster)
+```
+
 ## Prochaines étapes
 
 - [ ] Accès restreint par VPN (pare-feu côté hyperviseur).
