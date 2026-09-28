@@ -765,18 +765,21 @@ function mdToHtml(src) {
   text = text.replace(/(^|[^_])_([^_\n]+)_/g, "$1<em>$2</em>");
   text = text.replace(/~~([^~\n]+)~~/g, "<del>$1</del>");
 
-  // 10a) Images ![alt](url ou chemin) -> <img>. On accepte http(s), data:image
-  //      et les chemins locaux (servis via /api/asset).
-  text = text.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt, src) => {
-    let url = src;
-    if (/^(https?:|data:image)/i.test(src)) {
-      url = src;
-    } else {
-      // chemin local (relatif ou file://) -> via l'endpoint /api/asset
-      url = "/api/asset?path=" + encodeURIComponent(src);
-    }
-    return `<img class="md-img" src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" loading="lazy">`;
-  });
+  // 10a) Images ![alt](url ou chemin ou media:nom) -> <img>.
+  //      - https://…            : direct
+  //      - media:nom.png        : média archivé (retrouvé par nom, persistant)
+  //      - chemin local         : via /api/asset
+  const imgSrc = (src) => {
+    if (/^https?:/i.test(src) || /^data:image/i.test(src)) return src;
+    if (/^media:/i.test(src))
+      return "/api/media/by-name?name=" + encodeURIComponent(src.slice(6));
+    return "/api/asset?path=" + encodeURIComponent(src);
+  };
+  text = text.replace(
+    /!\[([^\]]*)\]\(([^)\s]+)\)/g,
+    (_, alt, src) =>
+      `<img class="md-img" src="${escapeHtml(imgSrc(src))}" alt="${escapeHtml(alt)}" loading="lazy">`,
+  );
 
   // 10b) Liens [texte](url) — on n'autorise que http(s).
   text = text.replace(
