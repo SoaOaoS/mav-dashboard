@@ -1,22 +1,21 @@
 #!/usr/bin/env python3
 """mav_api — backend du dashboard Mav.
 
-Petit serveur HTTP (stdlib) qui expose en lecture l'état réel de l'agent :
-jobs, mémoire (Postgres), veille, agents, santé des services, métriques VM.
-Et un unique point d'écriture : /api/ask, qui envoie un prompt à une session
-opencode **dédiée au dashboard** (jamais la session Telegram, pour ne pas
-perturber le bot qui tourne en parallèle).
+Petit serveur HTTP (stdlib) qui expose en lecture l'état réel de l'agent
+(jobs, mémoire Postgres, veille, agents, santé, métriques) et un chat qui
+passe par une session opencode dédiée au dashboard, avec streaming SSE.
 
-Aucune authentification : destiné à tourner sur une VM privée, joignable
-uniquement via VPN. Ne pas exposer sur Internet tel quel.
+Aucune authentification : destiné à une VM privée, joignable via VPN.
 """
 
 from __future__ import annotations
 
+import base64
 import json
+import mimetypes
 import os
+import re
 import shutil
-import subprocess
 import threading
 import time
 import urllib.error
@@ -29,7 +28,6 @@ from pathlib import Path
 
 PORT = int(os.environ.get("MAV_API_PORT", "8787"))
 BIND = os.environ.get("MAV_API_BIND", "0.0.0.0")
-# TLS optionnel : nécessaire pour que la PWA soit installable (contexte sécurisé).
 TLS_PORT = int(os.environ.get("MAV_TLS_PORT", "0") or 0)
 TLS_CERT = os.environ.get("MAV_TLS_CERT", "")
 TLS_KEY = os.environ.get("MAV_TLS_KEY", "")
@@ -39,15 +37,20 @@ JOBS_FILE = BOT_DIR / "jobs.json"
 JOBS_STATE = BOT_DIR / "jobs_state.json"
 MEMORY_FILE = BOT_DIR / "memory.json"
 STATIC_DIR = Path(os.environ.get("MAV_STATIC", Path(__file__).resolve().parent.parent))
+ATTACH_DIR = Path(os.environ.get("MAV_ATTACH", "/tmp/mav-dashboard/attachments"))
+PUSH_FILE = Path(os.environ.get("MAV_PUSH_FILE", BOT_DIR / "push_subs.json"))
 
 OPENCODE_URL = os.environ.get("OPENCODE_URL", "http://127.0.0.1:4096").rstrip("/")
 PG_DSN = os.environ.get(
     "PG_DSN", "host=127.0.0.1 port=5432 user=mav password=mav_secret dbname=mav"
 )
 DEFAULT_AGENT = os.environ.get("MAV_DASH_AGENT", "").strip()
-# Le modèle par défaut de la config globale peut être retiré côté fournisseur ;
-# on fige ici celui que le bot utilise, sourçable par OPENCODE_MODEL.
 DEFAULT_MODEL = os.environ.get("OPENCODE_MODEL", "ollama-cloud/deepseek-v4.1-flash").strip()
+# Chat id utilisé pour rattacher les nouvelles surveillances au bot Telegram.
+DEFAULT_CHAT_ID = int(os.environ.get("MAV_CHAT_ID", "7674111325"))
+
+# Agents proposés dans le sélecteur du dashboard.
+PRIMARY_AGENTS = ["general", "dev", "finance", "ops", "research", "reviewer", "writer"]
 
 # ------------------------------------------------------------------- helpers
 
@@ -56,7 +59,7 @@ def _json_default(o):
     return str(o)
 
 
-def http_json(url: str, method: str = "GET", body: dict | None = None, timeout: float = 8):
+def http_json(url: str, method: str = "GET", body=None, timeout: float = 8):
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     if data:
@@ -75,9 +78,23 @@ def pg_query(sql: str, params: tuple = ()) -> list[dict]:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, params)
             if cur.description:
-                return [dict(r) for r in cur.fetchall()]
+                rows = [dict(r) for r in cur.fetchall()]
+                conn.commit()
+                return rows
             conn.commit()
             return []
+    finally:
+        conn.close()
+
+
+def pg_exec(sql: str, params: tuple = ()) -> None:
+    import psycopg2
+
+    conn = psycopg2.connect(PG_DSN, connect_timeout=3)
+    try:
+        cur = conn.cursor()
+        cur.execute(sql, params)
+        conn.commit()
     finally:
         conn.close()
 
@@ -89,20 +106,21 @@ def read_json(path: Path, default):
         return default
 
 
+def write_json(path: Path, data) -> None:
+    tmp = Path(path).with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1))
+    tmp.replace(path)
+
+
 def sys_metrics() -> dict:
     out: dict = {}
-
-    # CPU : delta de /proc/stat
     try:
         fields = open("/proc/stat").readline().split()[1:]
         vals = [int(x) for x in fields]
         idle = vals[3] + (vals[4] if len(vals) > 4 else 0)
-        total = sum(vals)
-        out["_cpu"] = (idle, total)
+        out["_cpu"] = (idle, sum(vals))
     except Exception:
         pass
-
-    # Mémoire
     try:
         mem = {}
         for line in open("/proc/meminfo"):
@@ -113,21 +131,16 @@ def sys_metrics() -> dict:
         out["mem_pct"] = round((total - avail) / total * 100)
     except Exception:
         pass
-
-    # Disque
     try:
         u = shutil.disk_usage("/")
         out["disk_pct"] = round(u.used / u.total * 100)
     except Exception:
         pass
-
-    # Load / uptime
     try:
         out["load"] = round(float(open("/proc/loadavg").read().split()[0]), 2)
         out["uptime_s"] = int(float(open("/proc/uptime").read().split()[0]))
     except Exception:
         pass
-
     return out
 
 
@@ -136,7 +149,6 @@ _cpu_prev: tuple | None = None
 
 
 def cpu_pct() -> int | None:
-    """Delta entre deux lectures de /proc/stat. La première mesure renvoie None."""
     global _cpu_prev
     cur = sys_metrics().get("_cpu")
     if not cur:
@@ -154,32 +166,109 @@ def cpu_pct() -> int | None:
     return round((1 - di / dt) * 100)
 
 
+# --------------------------------------------------------------- proxmox
+
+
+def _proxmox_conf() -> dict:
+    """Récupère les accès Proxmox depuis la config opencode, sans les exposer."""
+    try:
+        cfg = json.loads((Path.home() / ".config/opencode/opencode.json").read_text())
+        env = cfg.get("mcp", {}).get("proxmox", {}).get("environment", {})
+        return {
+            "host": env.get("PROXMOX_HOST", "192.168.1.28"),
+            "user": env.get("PROXMOX_USER", "root@pam"),
+            "token_name": env.get("PROXMOX_TOKEN_NAME", "mcp"),
+            "token": env.get("PROXMOX_TOKEN_VALUE", ""),
+        }
+    except Exception:
+        return {}
+
+
+def proxmox_query(path: str) -> dict:
+    conf = _proxmox_conf()
+    if not conf.get("token"):
+        return {}
+    url = f"https://{conf['host']}:8006/api2/json{path}"
+    req = urllib.request.Request(url)
+    req.add_header(
+        "Authorization",
+        f"PVEAPIToken={conf['user']}!{conf['token_name']}={conf['token']}",
+    )
+    import ssl
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    with urllib.request.urlopen(req, timeout=6, context=ctx) as r:
+        return json.loads(r.read().decode()).get("data", {})
+
+
+def get_proxmox() -> dict:
+    try:
+        nodes = proxmox_query("/nodes")
+        vms = proxmox_query("/cluster/resources?type=vm")
+    except Exception:
+        return {"available": False, "nodes": [], "vms": []}
+
+    out_nodes = []
+    for n in nodes or []:
+        out_nodes.append(
+            {
+                "name": n.get("node"),
+                "status": n.get("status"),
+                "cpu": round((n.get("cpu") or 0) * 100),
+                "mem_used": n.get("mem"),
+                "mem_total": n.get("maxmem"),
+                "mem_pct": round((n.get("mem") or 0) / (n.get("maxmem") or 1) * 100),
+                "disk_used": n.get("disk"),
+                "disk_total": n.get("maxdisk"),
+                "uptime": n.get("uptime"),
+            }
+        )
+    running = [v for v in (vms or []) if v.get("status") == "running"]
+    out_vms = [
+        {
+            "vmid": v.get("vmid"),
+            "name": v.get("name"),
+            "type": v.get("type"),
+            "node": v.get("node"),
+            "status": v.get("status"),
+            "cpu": round((v.get("cpu") or 0) * 100),
+            "mem": v.get("mem"),
+            "maxmem": v.get("maxmem"),
+            "uptime": v.get("uptime"),
+        }
+        for v in (vms or [])
+    ]
+    return {
+        "available": True,
+        "nodes": out_nodes,
+        "vms": out_vms,
+        "running": len(running),
+        "total": len(out_vms),
+    }
+
+
 # ------------------------------------------------------------------- data
 
 
 def get_status() -> dict:
     m = sys_metrics()
-    health = None
     try:
         health = http_json(f"{OPENCODE_URL}/global/health", timeout=4)
     except Exception:
         health = {"healthy": False}
 
     pg = False
+    n_watch = n_conv = n_facts = 0
     try:
         pg_query("select 1")
         pg = True
+        n_watch = pg_query("select count(*) c from watch_items")[0]["c"]
+        n_conv = pg_query("select count(*) c from conversations")[0]["c"]
+        n_facts = pg_query("select count(*) c from facts")[0]["c"]
     except Exception:
-        pg = False
-
-    n_watch = n_conv = n_facts = 0
-    if pg:
-        try:
-            n_watch = pg_query("select count(*) c from watch_items")[0]["c"]
-            n_conv = pg_query("select count(*) c from conversations")[0]["c"]
-            n_facts = pg_query("select count(*) c from facts")[0]["c"]
-        except Exception:
-            pass
+        pass
 
     jobs = read_json(JOBS_FILE, [])
     return {
@@ -202,26 +291,22 @@ def get_status() -> dict:
 
 def get_connections() -> list[dict]:
     conns = []
-
     try:
         h = http_json(f"{OPENCODE_URL}/global/health", timeout=4)
         ok = bool(h and h.get("healthy"))
         conns.append({"name": "Moteur opencode", "state": "ok" if ok else "off", "label": "en ligne" if ok else "hors ligne"})
     except Exception:
         conns.append({"name": "Moteur opencode", "state": "off", "label": "hors ligne"})
-
     try:
         pg_query("select 1")
         conns.append({"name": "Base mémoire", "state": "ok", "label": "connectée"})
     except Exception:
         conns.append({"name": "Base mémoire", "state": "off", "label": "hors ligne"})
-
-    # Docker via socket
     docker_ok = Path("/var/run/docker.sock").exists()
     conns.append({"name": "Docker", "state": "ok" if docker_ok else "warn", "label": "présent" if docker_ok else "inconnu"})
-
     conns.append({"name": "Telegram", "state": "ok", "label": "pont actif"})
-    conns.append({"name": "Proxmox", "state": "ok", "label": "configuré"})
+    px = get_proxmox()
+    conns.append({"name": "Proxmox", "state": "ok" if px.get("available") else "warn", "label": "connecté" if px.get("available") else "indisponible"})
     return conns
 
 
@@ -235,6 +320,7 @@ def get_jobs() -> dict:
                 "name": j.get("name"),
                 "description": j.get("description", ""),
                 "time": j.get("time", ""),
+                "every_minutes": j.get("every_minutes"),
                 "days": j.get("days", []),
                 "agent": j.get("agent", ""),
                 "enabled": j.get("enabled", True),
@@ -244,33 +330,58 @@ def get_jobs() -> dict:
     return {"jobs": out}
 
 
+def set_job_enabled(name: str, enabled: bool) -> bool:
+    jobs = read_json(JOBS_FILE, [])
+    found = False
+    for j in jobs:
+        if j.get("name") == name:
+            j["enabled"] = bool(enabled)
+            found = True
+    if found:
+        write_json(JOBS_FILE, jobs)
+    return found
+
+
 def get_memory(limit: int = 20) -> dict:
-    try:
-        convs = pg_query(
-            "select question, answer, ts from conversations order by ts desc limit %s",
-            (limit,),
-        )
-    except Exception:
-        convs = []
-    try:
-        facts = pg_query("select fact, source, ts from facts order by ts desc limit 20")
-    except Exception:
-        facts = []
-    try:
-        prefs = pg_query("select key, value, ts from preferences order by ts desc limit 20")
-    except Exception:
-        prefs = []
-    return {"conversations": convs, "facts": facts, "preferences": prefs}
+    def q(sql, params=()):
+        try:
+            return pg_query(sql, params)
+        except Exception:
+            return []
+
+    return {
+        "conversations": q("select question, answer, ts from conversations order by ts desc limit %s", (limit,)),
+        "facts": q("select fact, source, ts from facts order by ts desc limit 20"),
+        "preferences": q("select key, value, ts from preferences order by ts desc limit 20"),
+    }
 
 
 def get_watch() -> dict:
     try:
         items = pg_query(
-            "select kind, target, last_state, last_checked, enabled from watch_items order by id desc"
+            "select id, kind, target, last_state, last_checked, enabled from watch_items order by id desc"
         )
     except Exception:
         items = []
     return {"items": items}
+
+
+VALID_WATCH_KINDS = ["web", "mail", "github", "moodle", "proxmox", "health"]
+
+
+def watch_add(kind: str, target: str) -> bool:
+    if kind not in VALID_WATCH_KINDS or not target.strip():
+        return False
+    pg_exec(
+        "insert into watch_items (chat_id, kind, target, ts) values (%s, %s, %s, %s)",
+        (DEFAULT_CHAT_ID, kind, target.strip()[:500], int(time.time())),
+    )
+    return True
+
+
+def watch_remove(item_id: int) -> bool:
+    pg_exec("delete from watch_items where id = %s", (item_id,))
+    return True
 
 
 def get_agents() -> dict:
@@ -281,16 +392,48 @@ def get_agents() -> dict:
             for a in agents
             if isinstance(a, dict) and a.get("name") and a.get("mode") in (None, "all", "primary")
         )
-        return {"agents": names}
+        ordered = [n for n in PRIMARY_AGENTS if n in names] + [n for n in names if n not in PRIMARY_AGENTS]
+        return {"agents": ordered}
     except Exception:
-        return {"agents": []}
+        return {"agents": PRIMARY_AGENTS}
+
+
+# ------------------------------------------------------------------- search
+
+
+def global_search(query: str) -> dict:
+    q = query.strip()
+    if not q:
+        return {"documents": [], "conversations": [], "facts": []}
+    docs, convs, facts = [], [], []
+    try:
+        docs = pg_query(
+            "select title, left(body, 240) as excerpt, source, ts "
+            "from documents where tsv @@ plainto_tsquery('french', %s) "
+            "order by ts desc limit 8",
+            (q,),
+        )
+    except Exception:
+        pass
+    try:
+        convs = pg_query(
+            "select question, left(answer, 240) as answer, ts from conversations "
+            "where question ilike %s or answer ilike %s order by ts desc limit 8",
+            (f"%{q}%", f"%{q}%"),
+        )
+    except Exception:
+        pass
+    try:
+        facts = pg_query(
+            "select fact, ts from facts where fact ilike %s order by ts desc limit 8",
+            (f"%{q}%",),
+        )
+    except Exception:
+        pass
+    return {"documents": docs, "conversations": convs, "facts": facts}
 
 
 # ------------------------------------------------------------------- chat
-#
-# Les discussions du dashboard sont des sessions opencode dont le titre
-# commence par PREFIX. Ça les distingue sans ambiguïté des sessions Telegram
-# et des jobs planifiés, sans registre local à maintenir.
 
 PREFIX = "dash: "
 DEFAULT_TITLE = "Nouvelle discussion"
@@ -304,15 +447,10 @@ def _list_raw_sessions() -> list[dict]:
 
 
 def _migrate_legacy() -> None:
-    """Renomme l'ancienne session unique au format préfixé."""
     for s in _list_raw_sessions():
         if s.get("title") == "dashboard":
             try:
-                http_json(
-                    f"{OPENCODE_URL}/session/{s['id']}",
-                    method="PATCH",
-                    body={"title": PREFIX + "Première discussion"},
-                )
+                http_json(f"{OPENCODE_URL}/session/{s['id']}", method="PATCH", body={"title": PREFIX + "Première discussion"})
             except Exception:
                 pass
 
@@ -325,23 +463,22 @@ def list_sessions() -> list[dict]:
         if not title.startswith(PREFIX):
             continue
         t = s.get("time", {})
-        out.append(
-            {
-                "id": s["id"],
-                "title": title[len(PREFIX):] or DEFAULT_TITLE,
-                "created": t.get("created"),
-                "updated": t.get("updated") or t.get("created"),
-            }
-        )
+        out.append({
+            "id": s["id"],
+            "title": title[len(PREFIX):] or DEFAULT_TITLE,
+            "created": t.get("created"),
+            "updated": t.get("updated") or t.get("created"),
+        })
     out.sort(key=lambda x: x.get("updated") or 0, reverse=True)
     return out
 
 
-def create_session(title: str = "") -> dict:
+def create_session(title: str = "", agent: str = "") -> dict:
     name = (title or DEFAULT_TITLE).strip()[:80] or DEFAULT_TITLE
-    res = http_json(
-        f"{OPENCODE_URL}/session", method="POST", body={"title": PREFIX + name}
-    )
+    body = {"title": PREFIX + name}
+    if agent and agent in PRIMARY_AGENTS:
+        body["agent"] = agent
+    res = http_json(f"{OPENCODE_URL}/session", method="POST", body=body)
     return {"id": res["id"], "title": name}
 
 
@@ -351,9 +488,7 @@ def rename_session(sid: str, title: str) -> bool:
         return False
     for verb in ("PATCH", "PUT"):
         try:
-            http_json(
-                f"{OPENCODE_URL}/session/{sid}", method=verb, body={"title": PREFIX + name}
-            )
+            http_json(f"{OPENCODE_URL}/session/{sid}", method=verb, body={"title": PREFIX + name})
             return True
         except Exception:
             continue
@@ -378,6 +513,14 @@ def session_title(sid: str) -> str:
         return ""
 
 
+def _part_text(parts: list) -> str:
+    return "\n\n".join(
+        (p.get("text") or "").strip()
+        for p in (parts or [])
+        if p.get("type") == "text" and not p.get("synthetic") and (p.get("text") or "").strip()
+    )
+
+
 def session_messages(sid: str) -> list[dict]:
     try:
         entries = http_json(f"{OPENCODE_URL}/session/{sid}/message", timeout=12) or []
@@ -389,87 +532,296 @@ def session_messages(sid: str) -> list[dict]:
         role = info.get("role")
         if role not in ("user", "assistant"):
             continue
-        parts = e.get("parts") or []
-        text = "\n\n".join(
-            (p.get("text") or "").strip()
-            for p in parts
-            if p.get("type") == "text" and not p.get("synthetic") and (p.get("text") or "").strip()
-        )
+        text = _part_text(e.get("parts") or [])
         if not text:
             continue
-        msgs.append(
-            {
-                "role": "me" if role == "user" else "mav",
-                "text": text,
-                "ts": (info.get("time") or {}).get("created"),
-            }
-        )
+        msgs.append({
+            "role": "me" if role == "user" else "mav",
+            "text": text,
+            "ts": (info.get("time") or {}).get("created"),
+        })
     return msgs
 
 
-def _assistant_text(entry: dict) -> str:
-    parts = entry.get("parts") or []
-    texts = [
-        (p.get("text") or "").strip()
-        for p in parts
-        if p.get("type") == "text" and not p.get("synthetic") and (p.get("text") or "").strip()
-    ]
-    return texts[-1] if texts else ""
+def export_session_markdown(sid: str) -> str:
+    title = session_title(sid)[len(PREFIX):] or DEFAULT_TITLE
+    lines = [f"# {title}", ""]
+    for m in session_messages(sid):
+        who = "Vous" if m["role"] == "me" else "Mav"
+        lines.append(f"**{who}**" + (f" · {_ts(m['ts'])}" if m.get("ts") else ""))
+        lines.append("")
+        lines.append(m["text"])
+        lines.append("")
+    return "\n".join(lines)
 
 
-def ask(prompt: str, agent: str = "", sid: str = "") -> str:
-    if not sid:
-        # Aucune session fournie : on réutilise la plus récente, sinon on en crée une.
-        sessions = list_sessions()
-        sid = sessions[0]["id"] if sessions else create_session()["id"]
+def _ts(ms) -> str:
     try:
-        before = len(http_json(f"{OPENCODE_URL}/session/{sid}/message", timeout=10) or [])
+        return time.strftime("%d/%m %H:%M", time.localtime(int(ms) / 1000))
     except Exception:
-        before = 0
+        return ""
 
-    body: dict = {"parts": [{"type": "text", "text": prompt}]}
+
+def _model_body() -> dict:
+    if DEFAULT_MODEL and "/" in DEFAULT_MODEL:
+        provider, model = DEFAULT_MODEL.split("/", 1)
+        return {"model": {"providerID": provider, "modelID": model}}
+    return {}
+
+
+def _parts(prompt: str, files: list) -> list:
+    parts: list[dict] = [{"type": "text", "text": prompt}]
+    for f in files or []:
+        parts.append({
+            "type": "file",
+            "url": f.get("url"),
+            "mime": f.get("mime") or "application/octet-stream",
+            "filename": f.get("filename") or "fichier",
+        })
+    return parts
+
+
+def save_upload(name: str, data_b64: str, mime: str = "") -> dict:
+    ATTACH_DIR.mkdir(parents=True, exist_ok=True)
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", name or "fichier")[:120] or "fichier"
+    dest = ATTACH_DIR / f"{int(time.time())}-{safe}"
+    dest.write_bytes(base64.b64decode(data_b64))
+    mt = mime or mimetypes.guess_type(safe)[0] or "application/octet-stream"
+    return {"url": f"file://{dest}", "mime": mt, "filename": safe}
+
+
+def ensure_session(sid: str = "", agent: str = "") -> str:
+    if sid:
+        return sid
+    sessions = list_sessions()
+    if sessions:
+        return sessions[0]["id"]
+    return create_session(agent=agent)["id"]
+
+
+def abort_session(sid: str) -> None:
+    try:
+        http_json(f"{OPENCODE_URL}/session/{sid}/abort", method="POST")
+    except Exception:
+        pass
+
+
+def stream_answer(prompt: str, sid: str, agent: str = "", files: list | None = None):
+    """Générateur d'événements SSE pour une réponse en streaming.
+
+    Émet : event: status/delta/tool/done/error, data: {…}
+    """
+    sid = ensure_session(sid, agent)
+    body: dict = {"parts": _parts(prompt, files or [])}
     ag = agent or DEFAULT_AGENT
     if ag:
         body["agent"] = ag
-    if DEFAULT_MODEL and "/" in DEFAULT_MODEL:
-        provider, model = DEFAULT_MODEL.split("/", 1)
-        body["model"] = {"providerID": provider, "modelID": model}
-    http_json(f"{OPENCODE_URL}/session/{sid}/prompt_async", method="POST", body=body)
+    body.update(_model_body())
 
-    deadline = time.time() + 300
-    last_text = ""
-    while time.time() < deadline:
-        time.sleep(1.5)
-        try:
-            msgs = http_json(f"{OPENCODE_URL}/session/{sid}/message", timeout=10) or []
-        except Exception:
-            continue
-        if len(msgs) <= before:
-            continue
-        for entry in reversed(msgs):
-            info = entry.get("info") or {}
-            if info.get("role") != "assistant":
+    def sse(event: str, data: dict) -> str:
+        return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+    try:
+        http_json(f"{OPENCODE_URL}/session/{sid}/prompt_async", method="POST", body=body)
+    except Exception as exc:  # noqa: BLE001
+        yield sse("error", {"message": f"Impossible de lancer : {exc}", "session": sid})
+        return
+
+    yield sse("start", {"session": sid})
+
+    # Écoute le flux global /event et filtre sur notre session.
+    try:
+        req = urllib.request.Request(f"{OPENCODE_URL}/event")
+        resp = urllib.request.urlopen(req, timeout=300)
+    except Exception as exc:  # noqa: BLE001
+        yield sse("error", {"message": f"flux indisponible : {exc}"})
+        return
+
+    started = time.time()
+    idle_deadline = 300
+    last_seen = time.time()
+    text = ""
+    try:
+        for raw in resp:
+            if time.time() - last_seen > idle_deadline:
+                break
+            line = raw.decode("utf-8", "replace").strip()
+            if not line.startswith("data:"):
                 continue
-            err = info.get("error")
-            if err:
-                msg = (err.get("data") or {}).get("message") or err.get("name") or "erreur du moteur"
-                return f"Le moteur a renvoyé une erreur : {msg}"
-            text = _assistant_text(entry)
-            if text:
-                last_text = text
-            if info.get("time", {}).get("completed") or info.get("completed"):
-                return last_text or "…"
-            break
-    return last_text or "Je n'ai pas pu terminer à temps. Réessaie ou précise ta demande."
+            try:
+                ev = json.loads(line[5:].strip())
+            except Exception:
+                continue
+            props = ev.get("properties") or {}
+            if props.get("sessionID") != sid:
+                continue
+            last_seen = time.time()
+            etype = ev.get("type")
+
+            if etype == "message.part.delta":
+                if props.get("field") == "text":
+                    delta = props.get("delta", "") or ""
+                    text += delta
+                    yield sse("delta", {"delta": delta})
+            elif etype == "message.part.updated":
+                part = props.get("part") or {}
+                if part.get("type") == "tool":
+                    yield sse("tool", {"tool": part.get("tool") or part.get("name") or "outil"})
+            elif etype == "session.status":
+                st = (props.get("status") or {}).get("type")
+                if st == "idle":
+                    yield sse("done", {"session": sid, "text": text})
+                    return
+            elif etype == "session.error":
+                err = props.get("error") or {}
+                msg = (err.get("data") or {}).get("message") or err.get("name") or "erreur"
+                yield sse("error", {"message": str(msg)})
+                return
+            if time.time() - started > 600:
+                break
+    finally:
+        try:
+            resp.close()
+        except Exception:
+            pass
+    yield sse("done", {"session": sid, "text": text})
+
+
+def ask(prompt: str, agent: str = "", sid: str = "", files: list | None = None) -> str:
+    """Version bloquante (utile pour les scripts / fallback)."""
+    last = ""
+    for chunk in stream_answer(prompt, sid, agent, files):
+        if not chunk.startswith("event: delta"):
+            if chunk.startswith("event: done"):
+                try:
+                    return json.loads(chunk.split("data: ", 1)[1]).get("text") or last
+                except Exception:
+                    return last
+            if chunk.startswith("event: error"):
+                try:
+                    return f"Erreur : {json.loads(chunk.split('data: ', 1)[1]).get('message')}"
+                except Exception:
+                    return "Erreur du moteur."
+            continue
+        try:
+            last += json.loads(chunk.split("data: ", 1)[1]).get("delta", "")
+        except Exception:
+            pass
+    return last
+
+
+# ------------------------------------------------------------------- push
+
+_vapid_lock = threading.Lock()
+
+
+def _vapid_keys() -> tuple[str, str]:
+    """Retourne (clé_privée_pem, clé_publique_b64url). Les crée au besoin."""
+    key_file = BOT_DIR / "vapid_private.pem"
+    pub_file = BOT_DIR / "vapid_public.txt"
+    if key_file.exists() and pub_file.exists():
+        return key_file.read_text(), pub_file.read_text().strip()
+    with _vapid_lock:
+        if key_file.exists() and pub_file.exists():
+            return key_file.read_text(), pub_file.read_text().strip()
+        from cryptography.hazmat.primitives import serialization
+        from py_vapid import Vapid01
+
+        v = Vapid01()
+        v.generate_keys()
+        pem = v.private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        ).decode()
+        raw = v.public_key.public_bytes(
+            encoding=serialization.Encoding.X962,
+            format=serialization.PublicFormat.UncompressedPoint,
+        )
+        pub = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+        key_file.write_text(pem)
+        key_file.chmod(0o600)
+        pub_file.write_text(pub)
+        return pem, pub
+
+
+def push_public_key() -> str:
+    return _vapid_keys()[1]
+
+
+def push_subscribe(sub: dict) -> bool:
+    subs = read_json(PUSH_FILE, [])
+    if not isinstance(subs, list):
+        subs = []
+    endpoint = sub.get("endpoint")
+    if not endpoint:
+        return False
+    subs = [s for s in subs if s.get("endpoint") != endpoint]
+    subs.append(sub)
+    write_json(PUSH_FILE, subs)
+    return True
+
+
+def push_unsubscribe(endpoint: str) -> bool:
+    subs = read_json(PUSH_FILE, [])
+    subs = [s for s in subs if s.get("endpoint") != endpoint]
+    write_json(PUSH_FILE, subs)
+    return True
+
+
+def send_push(title: str, body: str, url: str = "./") -> int:
+    try:
+        from pywebpush import webpush
+    except Exception:
+        return 0
+    pem, _ = _vapid_keys()
+    subs = read_json(PUSH_FILE, [])
+    sent = 0
+    alive = []
+    payload = json.dumps({"title": title, "body": body, "url": url})
+    for s in subs:
+        try:
+            webpush(
+                subscription_info=s,
+                data=payload,
+                vapid_private_key=pem,
+                vapid_claims={"sub": "mailto:raphael.girard.tech@gmail.com"},
+            )
+            sent += 1
+            alive.append(s)
+        except Exception:
+            pass  # abonnement mort : on ne le garde pas
+    write_json(PUSH_FILE, alive)
+    return sent
+
+
+def push_watch_loop() -> None:
+    """Surveille les changements d'état de la veille et pousse une notif."""
+    seen: dict[int, str] = {}
+    while True:
+        try:
+            items = pg_query("select id, kind, target, last_state from watch_items")
+            for it in items:
+                iid = it["id"]
+                state = it.get("last_state")
+                if iid in seen and state != seen[iid] and state:
+                    send_push(
+                        f"Veille · {it['kind']}",
+                        f"{it['target']}\n{state}",
+                    )
+                seen[iid] = state
+        except Exception:
+            pass
+        time.sleep(60)
 
 
 # ------------------------------------------------------------------- server
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "mav-api/0.1"
+    server_version = "mav-api/0.2"
 
-    def log_message(self, *a):  # silence
+    def log_message(self, *a):
         pass
 
     def _send(self, code: int, payload, ctype="application/json"):
@@ -485,13 +837,34 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def do_GET(self):
-        path, _, query = self.path.partition("?")
-        params = {}
+    def _sse_open(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.send_header("X-Accel-Buffering", "no")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+
+    def _body(self) -> dict:
+        try:
+            n = int(self.headers.get("Content-Length", 0))
+            return json.loads(self.rfile.read(n) or b"{}")
+        except Exception:
+            return {}
+
+    def _params(self) -> dict:
+        _, _, query = self.path.partition("?")
+        out = {}
         if query:
             for pair in query.split("&"):
                 k, _, v = pair.partition("=")
-                params[k] = urllib.parse.unquote_plus(v)
+                out[k] = urllib.parse.unquote_plus(v)
+        return out
+
+    def do_GET(self):
+        path, _, _ = self.path.partition("?")
+        p = self._params()
         try:
             if path == "/api/status":
                 return self._send(200, get_status())
@@ -505,55 +878,123 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, get_agents())
             if path == "/api/connections":
                 return self._send(200, {"connections": get_connections()})
+            if path == "/api/proxmox":
+                return self._send(200, get_proxmox())
             if path == "/api/health":
                 return self._send(200, {"ok": True, "ts": int(time.time())})
             if path == "/api/sessions":
                 return self._send(200, {"sessions": list_sessions()})
             if path == "/api/session":
-                sid = params.get("id", "")
+                sid = p.get("id", "")
                 if not sid:
                     return self._send(400, {"error": "id manquant"})
                 return self._send(200, {"id": sid, "title": session_title(sid)[len(PREFIX):], "messages": session_messages(sid)})
+            if path == "/api/session/export":
+                sid = p.get("id", "")
+                md = export_session_markdown(sid)
+                self.send_response(200)
+                self.send_header("Content-Type", "text/markdown; charset=utf-8")
+                self.send_header("Content-Disposition", 'attachment; filename="mav-conversation.md"')
+                data = md.encode()
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            if path == "/api/search":
+                return self._send(200, global_search(p.get("q", "")))
+            if path == "/api/push/key":
+                return self._send(200, {"key": push_public_key()})
+            if path == "/api/stream":
+                return self._stream(p)
             return self._static(path)
         except Exception as exc:  # noqa: BLE001
             return self._send(500, {"error": str(exc)})
 
-    def do_POST(self):
-        path = self.path.split("?", 1)[0]
+    def _stream(self, p: dict):
+        prompt = p.get("prompt", "").strip()
+        if not prompt:
+            return self._send(400, {"error": "prompt manquant"})
+        files = []
+        if p.get("files"):
+            try:
+                for u in json.loads(p["files"]):
+                    files.append({"url": u, "mime": "", "filename": ""})
+            except Exception:
+                pass
+        self._sse_open()
         try:
-            n = int(self.headers.get("Content-Length", 0))
-            payload = json.loads(self.rfile.read(n) or b"{}")
-        except Exception:
-            payload = {}
+            for chunk in stream_answer(prompt, p.get("session", ""), p.get("agent", ""), files):
+                self.wfile.write(chunk.encode())
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception as exc:  # noqa: BLE001
+            try:
+                self.wfile.write(f"event: error\ndata: {json.dumps({'message': str(exc)})}\n\n".encode())
+            except Exception:
+                pass
 
-        if path == "/api/ask":
-            prompt = (payload.get("prompt") or "").strip()
-            if not prompt:
-                return self._send(400, {"error": "prompt manquant"})
-            try:
-                answer = ask(prompt, payload.get("agent", ""), payload.get("session", ""))
-                return self._send(200, {"answer": answer})
-            except Exception as exc:  # noqa: BLE001
-                return self._send(500, {"error": str(exc)})
-        if path == "/api/session/new":
-            try:
-                return self._send(200, create_session(payload.get("title", "")))
-            except Exception as exc:  # noqa: BLE001
-                return self._send(500, {"error": str(exc)})
-        if path == "/api/session/rename":
-            ok = rename_session(payload.get("id", ""), payload.get("title", ""))
-            return self._send(200 if ok else 400, {"ok": ok})
-        if path == "/api/session/delete":
-            ok = delete_session(payload.get("id", ""))
-            return self._send(200 if ok else 400, {"ok": ok})
-        return self._send(404, {"error": "not found"})
+    def do_POST(self):
+        path, _, _ = self.path.partition("?")
+        payload = self._body()
+        try:
+            if path == "/api/ask":
+                prompt = (payload.get("prompt") or "").strip()
+                if not prompt:
+                    return self._send(400, {"error": "prompt manquant"})
+                return self._send(200, {"answer": ask(prompt, payload.get("agent", ""), payload.get("session", ""), payload.get("files"))})
+            if path == "/api/session/new":
+                return self._send(200, create_session(payload.get("title", ""), payload.get("agent", "")))
+            if path == "/api/session/rename":
+                ok = rename_session(payload.get("id", ""), payload.get("title", ""))
+                return self._send(200 if ok else 400, {"ok": ok})
+            if path == "/api/session/delete":
+                ok = delete_session(payload.get("id", ""))
+                return self._send(200 if ok else 400, {"ok": ok})
+            if path == "/api/session/abort":
+                abort_session(payload.get("id", ""))
+                return self._send(200, {"ok": True})
+            if path == "/api/session/summary":
+                sid = payload.get("id", "")
+                s = ask("Résume cette conversation en quelques points clés, en français.", "summary", sid)
+                return self._send(200, {"summary": s})
+            if path == "/api/job/toggle":
+                ok = set_job_enabled(payload.get("name", ""), bool(payload.get("enabled")))
+                return self._send(200 if ok else 404, {"ok": ok})
+            if path == "/api/job/run":
+                name = payload.get("name", "")
+                job = next((j for j in read_json(JOBS_FILE, []) if j.get("name") == name), None)
+                if not job:
+                    return self._send(404, {"error": "job inconnu"})
+                sess = create_session(f"job: {name}", job.get("agent", "research"))
+                return self._send(200, {"session": sess["id"], "title": sess["title"]})
+            if path == "/api/watch/add":
+                ok = watch_add(payload.get("kind", ""), payload.get("target", ""))
+                return self._send(200 if ok else 400, {"ok": ok})
+            if path == "/api/watch/remove":
+                ok = watch_remove(int(payload.get("id", 0)))
+                return self._send(200, {"ok": ok})
+            if path == "/api/upload":
+                f = save_upload(payload.get("name", "fichier"), payload.get("data", ""), payload.get("mime", ""))
+                return self._send(200, f)
+            if path == "/api/push/subscribe":
+                ok = push_subscribe(payload)
+                return self._send(200, {"ok": ok})
+            if path == "/api/push/unsubscribe":
+                ok = push_unsubscribe(payload.get("endpoint", ""))
+                return self._send(200, {"ok": ok})
+            if path == "/api/push/test":
+                n = send_push("Mav", "Ceci est une notification de test.")
+                return self._send(200, {"sent": n})
+            return self._send(404, {"error": "not found"})
+        except Exception as exc:  # noqa: BLE001
+            return self._send(500, {"error": str(exc)})
 
     def _static(self, path: str):
         if path == "/":
             path = "/index.html"
         rel = path.lstrip("/").replace("..", "")
-        # Ne jamais servir de secret : clés, ou tout le dossier certs sauf la CA.
-        if rel.endswith(".key") or rel.endswith(".csr") or rel.endswith(".srl"):
+        if rel.endswith((".key", ".csr", ".srl")):
             return self._send(404, "not found", "text/plain")
         if rel.startswith("certs/") and rel != "certs/ca.crt":
             return self._send(404, "not found", "text/plain")
@@ -570,19 +1011,18 @@ class Handler(BaseHTTPRequestHandler):
             ".json": "application/json",
             ".ico": "image/x-icon",
             ".crt": "application/x-x509-ca-cert",
-            ".pem": "application/x-pem-file",
         }.get(target.suffix, "application/octet-stream")
         return self._send(200, target.read_bytes(), ctype)
 
 
 def main():
     import ssl
-    import threading
 
     srv = ThreadingHTTPServer((BIND, PORT), Handler)
     print(f"mav-api en écoute sur http://{BIND}:{PORT} (statique: {STATIC_DIR})", flush=True)
 
-    # Second listener HTTPS (pour rendre la PWA installable).
+    threading.Thread(target=push_watch_loop, daemon=True).start()
+
     if TLS_PORT and TLS_CERT and TLS_KEY:
         try:
             tsrv = ThreadingHTTPServer((BIND, TLS_PORT), Handler)
