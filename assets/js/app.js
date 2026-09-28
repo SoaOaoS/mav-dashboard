@@ -1286,8 +1286,16 @@ async function send(raw, cmd) {
     };
 
     let errorMsg = null;
-    while (true) {
-      const { value, done } = await reader.read();
+    let terminal = false;
+    while (!terminal) {
+      let value, done;
+      try {
+        ({ value, done } = await reader.read());
+      } catch (_) {
+        // Le serveur peut fermer la connexion juste après l'event final :
+        // si on a déjà le résultat, ce n'est pas une erreur.
+        break;
+      }
       if (done) break;
       buf += decoder.decode(value, { stream: true });
       let idx;
@@ -1302,9 +1310,15 @@ async function send(raw, cmd) {
             dataLines.push(line.slice(5).trim());
         }
         handle(evName, dataLines.join("\n"));
+        if (evName === "done" || evName === "error") {
+          terminal = true;
+          break;
+        }
       }
-      if (errorMsg) break;
     }
+    try {
+      reader.cancel();
+    } catch (_) {}
 
     if (sessionFromServer && sessionFromServer !== CURRENT_SESSION) {
       CURRENT_SESSION = sessionFromServer;
