@@ -748,7 +748,12 @@ async function send(raw, cmd) {
     agent: CURRENT_AGENT || "",
   });
   if (files.length)
-    qs.set("files", JSON.stringify(files.map((f) => f.url).filter(Boolean)));
+    qs.set(
+      "files",
+      JSON.stringify(
+        files.map((f) => ({ url: f.url, mime: f.mime, filename: f.filename })),
+      ),
+    );
 
   try {
     await new Promise((resolve, reject) => {
