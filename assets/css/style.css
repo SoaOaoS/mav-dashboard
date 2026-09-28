@@ -2171,3 +2171,73 @@ body.is-thinking .orb::before {
   color: var(--ink-3);
   padding: 0.3rem 0;
 }
+
+/* ---------- Rendu markdown dans les bulles ---------- */
+.bubble .md-h {
+  font-family: var(--display);
+  font-weight: 600;
+  margin: 0.6rem 0 0.3rem;
+  line-height: 1.25;
+}
+.bubble .md-h:first-child {
+  margin-top: 0;
+}
+.bubble h2.md-h { font-size: 1.15rem; }
+.bubble h3.md-h { font-size: 1.06rem; }
+.bubble h4.md-h,
+.bubble h5.md-h,
+.bubble h6.md-h { font-size: 0.98rem; }
+
+.bubble .md-ul {
+  margin: 0.3rem 0;
+  padding-left: 1.1rem;
+}
+.bubble .md-li {
+  margin: 0.15rem 0;
+  line-height: 1.5;
+}
+
+.bubble .md-code {
+  background: rgba(20, 30, 40, 0.06);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.6rem 0.7rem;
+  margin: 0.5rem 0;
+  overflow-x: auto;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre;
+}
+.bubble .md-code code {
+  font-family: var(--font-mono, monospace);
+}
+.bubble .md-inline {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85em;
+  background: rgba(20, 30, 40, 0.07);
+  padding: 0.08rem 0.35rem;
+  border-radius: 5px;
+}
+.bubble .md-quote {
+  border-left: 3px solid var(--accent);
+  padding-left: 0.7rem;
+  margin: 0.4rem 0;
+  color: var(--ink-2);
+}
+.bubble .md-hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 0.7rem 0;
+}
+.bubble a {
+  color: var(--accent-ink);
+  text-decoration: underline;
+}
+.bubble strong { font-weight: 700; }
+.bubble del { opacity: 0.65; }
+
+/* ---------- Résultats de jobs en markdown ---------- */
+.jr-preview .md-h { font-size: 0.95rem; margin: 0.4rem 0 0.2rem; }
+.jr-preview .md-ul { padding-left: 1.1rem; margin: 0.2rem 0; }
+.jr-preview .md-code { white-space: pre-wrap; word-break: break-word; }
+.jr-preview .md-inline { font-family: var(--font-mono, monospace); font-size: 0.85em; }
