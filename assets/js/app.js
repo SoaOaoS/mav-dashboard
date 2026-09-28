@@ -180,21 +180,38 @@ $("#greeting").textContent = greet();
 
 /* ---------- Navigation ---------- */
 function go(view) {
-  $$(".nav-item").forEach((b) =>
+  $$(".nav-item, .tab").forEach((b) =>
     b.classList.toggle("is-active", b.dataset.view === view),
   );
   $$(".view").forEach((v) =>
     v.classList.toggle("is-active", v.id === `view-${view}`),
   );
   if (view === "system") loadInfra();
+  setMobileTitle(view);
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
-$$(".nav-item").forEach((b) =>
+$$(".nav-item, .tab").forEach((b) =>
   b.addEventListener("click", () => go(b.dataset.view)),
 );
 $$("[data-goto]").forEach((b) =>
   b.addEventListener("click", () => go(b.dataset.goto)),
 );
+
+/* En-tête mobile : titre contextuel + actions rapides */
+const VIEW_TITLES = {
+  home: "Mav",
+  chat: "Discussions",
+  jobs: "Automatisations",
+  memory: "Souvenirs",
+  watch: "Surveillance",
+  system: "Infra",
+};
+function setMobileTitle(view) {
+  const t = $("#mobileTitle");
+  if (t) t.textContent = VIEW_TITLES[view] || "Mav";
+}
+$("#mobileNew").addEventListener("click", () => newSession());
+$("#mobileSearch").addEventListener("click", () => openPalette());
 
 /* ---------- Rendu ---------- */
 function renderStatus(st) {
