@@ -39,6 +39,22 @@
     <link rel="stylesheet" href="assets/css/style.css" />
   </head>
   <body>
+    <!-- ============ EN-TÊTE MOBILE ============ -->
+    <header class="mobile-top" id="mobileTop">
+      <div class="mobile-top-left">
+        <div class="orb small" aria-hidden="true"></div>
+        <span class="mobile-title" id="mobileTitle">Mav</span>
+      </div>
+      <div class="mobile-top-actions">
+        <button class="mobile-icon" id="mobileNew" title="Nouvelle discussion">
+          <span class="nav-ico" data-ico="plus"></span>
+        </button>
+        <button class="mobile-icon" id="mobileSearch" title="Rechercher">
+          <span class="nav-ico" data-ico="search"></span>
+        </button>
+      </div>
+    </header>
+
     <div class="app">
       <!-- ============ SIDEBAR ============ -->
       <aside class="sidebar">
@@ -322,6 +338,30 @@
         </section>
       </main>
     </div>
+
+    <!-- ============ NAVBAR BASSE (mobile) ============ -->
+    <nav class="tabbar" id="tabbar">
+      <button class="tab is-active" data-view="home">
+        <span class="nav-ico" data-ico="home"></span>
+        <span class="tab-label">Accueil</span>
+      </button>
+      <button class="tab" data-view="chat">
+        <span class="nav-ico" data-ico="chat"></span>
+        <span class="tab-label">Discussions</span>
+      </button>
+      <button class="tab" data-view="jobs">
+        <span class="nav-ico" data-ico="bolt"></span>
+        <span class="tab-label">Autos</span>
+      </button>
+      <button class="tab" data-view="memory">
+        <span class="nav-ico" data-ico="heart"></span>
+        <span class="tab-label">Souvenirs</span>
+      </button>
+      <button class="tab" data-view="system">
+        <span class="nav-ico" data-ico="cpu"></span>
+        <span class="tab-label">Infra</span>
+      </button>
+    </nav>
 
     <!-- ============ COMMAND PALETTE ============ -->
     <div class="palette" id="palette" hidden>
