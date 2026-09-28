@@ -196,24 +196,6 @@ $$("[data-goto]").forEach((b) =>
   b.addEventListener("click", () => go(b.dataset.goto)),
 );
 
-/* ---------- Thème ---------- */
-function applyTheme(dark) {
-  document.body.classList.toggle("dark", dark);
-  $("#themeToggle").classList.toggle("is-on", dark);
-  const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.content = dark ? "#0e1418" : "#2f6f5e";
-}
-let darkPref =
-  localStorage.getItem("mav-theme") === "dark" ||
-  (!localStorage.getItem("mav-theme") &&
-    window.matchMedia("(prefers-color-scheme: dark)").matches);
-applyTheme(darkPref);
-$("#themeToggle").addEventListener("click", () => {
-  darkPref = !document.body.classList.contains("dark");
-  localStorage.setItem("mav-theme", darkPref ? "dark" : "light");
-  applyTheme(darkPref);
-});
-
 /* ---------- Rendu ---------- */
 function renderStatus(st) {
   STATUS = st;
