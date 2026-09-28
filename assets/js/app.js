@@ -301,6 +301,7 @@ function renderJobResults(results) {
     </div>`,
     )
     .join("");
+  mountCharts(box);
 }
 
 // Clic sur un résultat de job : déplie / replie l'aperçu.
@@ -605,8 +606,9 @@ function renderTable(lines) {
 }
 
 // Rendu en ligne (gras, italique, code, liens) réutilisable dans les cellules.
+// NB : le texte reçu est déjà échappé (on n'échappe pas une 2e fois).
 function inline(s) {
-  let t = escapeHtml(s);
+  let t = String(s == null ? "" : s);
   t = t.replace(/`([^`\n]+)`/g, '<code class="md-inline">$1</code>');
   t = t.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
   t = t.replace(/__([^_\n]+)__/g, "<strong>$1</strong>");
@@ -622,6 +624,30 @@ function inline(s) {
 
 function mdToHtml(src) {
   let text = String(src == null ? "" : src);
+
+  // 0) Graphiques : directive [[chart:SYMBOL:RANGE]] ou bloc ```chart:SYMBOL:RANGE
+  //    -> on les extrait avant tout le reste.
+  const charts = [];
+  const pushChart = (symbol, range) => {
+    const i = charts.length;
+    charts.push({
+      symbol: (symbol || "SPY").toUpperCase(),
+      range: range || "1mo",
+    });
+    return `\u0000CHART${i}\u0000`;
+  };
+  text = text.replace(
+    /\[\[\s*chart\s*:\s*([A-Za-z0-9.\-^=]+)\s*:\s*([A-Za-z0-9]+)\s*\]\]/gi,
+    (_, s, r) => pushChart(s, r),
+  );
+  text = text.replace(
+    /\[\[\s*chart\s*:\s*([A-Za-z0-9.\-^=]+)\s*\]\]/gi,
+    (_, s) => pushChart(s, "1mo"),
+  );
+  text = text.replace(
+    /```chart:([A-Za-z0-9.\-^=]+)(?::([A-Za-z0-9]+))?\n?([\s\S]*?)```/gi,
+    (_, s, r) => `${pushChart(s, r)}\n`,
+  );
 
   // 1) On isole les blocs de code pour ne pas les transformer ensuite.
   const codeBlocks = [];
@@ -720,17 +746,100 @@ function mdToHtml(src) {
   text = text.replace(/<br>(<\/(h[2-6]|ul|pre|blockquote|li)>)/g, "$1");
   text = text.replace(/<\/li><br>/g, "</li>");
 
-  // 12) Réinjecte les tableaux puis les blocs de code.
+  // 12) Réinjecte les tableaux, les graphiques puis les blocs de code.
   text = text.replace(
     /\u0000TABLE(\d+)\u0000/g,
     (_, i) => tables[Number(i)] || "",
   );
+  text = text.replace(/\u0000CHART(\d+)\u0000/g, (_, i) => {
+    const c = charts[Number(i)] || { symbol: "SPY", range: "1mo" };
+    return `<div class="md-chart" data-symbol="${escapeHtml(c.symbol)}" data-range="${escapeHtml(c.range)}"></div>`;
+  });
   text = text.replace(
     /\u0000CODE(\d+)\u0000/g,
     (_, i) => codeBlocks[Number(i)] || "",
   );
 
   return text;
+}
+
+/* ---------- Graphiques (lightweight-charts) ---------- */
+function mountCharts(root) {
+  if (typeof LightweightCharts === "undefined" || !root) return;
+  root.querySelectorAll(".md-chart:not([data-mounted])").forEach((el) => {
+    el.dataset.mounted = "1";
+    const symbol = el.dataset.symbol;
+    const range = el.dataset.range || "1mo";
+    el.innerHTML = `<div class="md-chart-head"><span class="md-chart-sym">${escapeHtml(symbol)}</span><span class="md-chart-load">chargement…</span></div><div class="md-chart-body"></div>`;
+    const body = el.querySelector(".md-chart-body");
+    const load = el.querySelector(".md-chart-load");
+    fetch(
+      `/api/chart?symbol=${encodeURIComponent(symbol)}&range=${encodeURIComponent(range)}`,
+    )
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.candles || !d.candles.length) throw new Error("pas de données");
+        const up = (d.pct ?? 0) >= 0;
+        el.classList.toggle("is-up", up);
+        el.classList.toggle("is-down", !up);
+        const priceTxt =
+          d.price != null
+            ? d.price.toLocaleString("fr-FR", { maximumFractionDigits: 2 })
+            : "—";
+        const pctTxt = d.pct != null ? `${up ? "+" : ""}${d.pct}%` : "";
+        el.querySelector(".md-chart-head").innerHTML =
+          `<span class="md-chart-sym">${escapeHtml(d.name || symbol)}</span>` +
+          `<span class="md-chart-price">${priceTxt} <em>${pctTxt}</em></span>`;
+        drawChart(body, d);
+      })
+      .catch(() => {
+        if (load) load.textContent = "indisponible";
+        el.classList.add("md-chart-error");
+      });
+  });
+}
+
+function drawChart(container, d) {
+  const line = d.candles.map((c) => ({ time: c.time, value: c.close }));
+  const chart = LightweightCharts.createChart(container, {
+    width: container.clientWidth || 300,
+    height: 180,
+    layout: {
+      background: { type: "solid", color: "rgba(255,255,255,0)" },
+      textColor: "#6b7a82",
+      fontFamily: "Inter, sans-serif",
+      fontSize: 11,
+    },
+    grid: {
+      vertLines: { color: "rgba(0,0,0,0.04)" },
+      horzLines: { color: "rgba(0,0,0,0.04)" },
+    },
+    rightPriceScale: {
+      borderVisible: false,
+      scaleMargins: { top: 0.15, bottom: 0.15 },
+    },
+    timeScale: { borderVisible: false, fixLeftEdge: true, fixRightEdge: true },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    handleScroll: false,
+    handleScale: false,
+  });
+  const up = (d.pct ?? 0) >= 0;
+  const color = up ? "#2f9d6f" : "#d9534f";
+  const series = chart.addAreaSeries({
+    lineColor: color,
+    topColor: up ? "rgba(47,157,111,0.28)" : "rgba(217,83,79,0.28)",
+    bottomColor: "rgba(255,255,255,0)",
+    lineWidth: 2,
+    priceLineVisible: false,
+    lastValueVisible: true,
+  });
+  series.setData(line);
+  chart.timeScale().fitContent();
+  new ResizeObserver(() => {
+    try {
+      chart.applyOptions({ width: container.clientWidth });
+    } catch (_) {}
+  }).observe(container);
 }
 
 function addMsg(text, who) {
@@ -743,8 +852,12 @@ function addMsg(text, who) {
   const bubble = el.querySelector(".bubble");
   // Les réponses de Mav sont rendues en markdown ; les messages de
   // l'utilisateur restent en texte brut.
-  if (who === "mav") bubble.innerHTML = mdToHtml(text);
-  else bubble.textContent = text;
+  if (who === "mav") {
+    bubble.innerHTML = mdToHtml(text);
+    mountCharts(bubble);
+  } else {
+    bubble.textContent = text;
+  }
   messages.appendChild(el);
   messages.scrollTop = messages.scrollHeight;
   return bubble;
@@ -1035,6 +1148,11 @@ async function send(raw, cmd) {
           CURRENT_SESSION = sessionFromServer;
         }
         if (!acc) addMsg("(pas de réponse)", "mav");
+        else if (bubble) {
+          // Rendu final + montage des graphiques/tableaux une fois complet.
+          bubble.innerHTML = mdToHtml(acc);
+          mountCharts(bubble);
+        }
         resolve();
       });
       es.addEventListener("error", (e) => {
