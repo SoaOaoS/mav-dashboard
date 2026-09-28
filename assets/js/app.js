@@ -774,11 +774,7 @@ async function send(raw, cmd) {
         bubble.textContent = acc;
         messages.scrollTop = messages.scrollHeight;
       });
-      es.addEventListener("tool", (e) => {
-        try {
-          addToolNote("› " + (JSON.parse(e.data).tool || "outil"));
-        } catch (_) {}
-      });
+      // Les étapes d'outils ne sont plus affichées : on ne garde que la réponse.
       es.addEventListener("done", (e) => {
         es.close();
         try {
