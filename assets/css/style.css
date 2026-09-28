@@ -170,7 +170,7 @@ body::before {
 
 .app {
   display: grid;
-  grid-template-columns: 264px 1fr;
+  grid-template-columns: 264px minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -487,6 +487,8 @@ body.is-thinking .orb::before {
   padding: 2.6rem 3rem 4rem;
   max-width: 1000px;
   width: 100%;
+  min-width: 0;
+  overflow-x: clip;
 }
 .view {
   display: none;
@@ -581,6 +583,8 @@ body.is-thinking .orb::before {
   gap: 0.5rem;
   flex-wrap: wrap;
   margin-bottom: 2.2rem;
+  min-width: 0;
+  max-width: 100%;
 }
 .chip {
   font-family: var(--font);
@@ -1745,30 +1749,37 @@ body.is-thinking .orb::before {
   animation: rise 0.25s ease;
 }
 
-/* ---------- RESPONSIVE ---------- */
-/* ---------- MOBILE : éléments masqués sur desktop ---------- */
+/* ============================================================
+   RESPONSIVE — MOBILE
+   Sur téléphone : sidebar desktop masquée, navbar basse façon
+   appli native, en-tête compact, et chat plein écran.
+   ============================================================ */
+
+/* Éléments mobiles invisibles sur desktop */
 .mobile-top,
 .tabbar {
   display: none;
 }
 
-/* ============ RESPONSIVE / MOBILE ============ */
 @media (max-width: 900px) {
-  body {
-    background-attachment: fixed;
-  }
-
+  /* --- Structure générale --- */
   .app {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     min-height: 100vh;
   }
-
-  /* La sidebar desktop disparaît complètement sur mobile. */
   .sidebar {
     display: none;
   }
+  .content {
+    padding: 1rem 0.9rem calc(5.75rem + env(safe-area-inset-bottom));
+    max-width: 100%;
+  }
+  .view,
+  .view.is-active {
+    min-width: 0;
+  }
 
-  /* En-tête mobile collant */
+  /* --- En-tête mobile collant --- */
   .mobile-top {
     display: flex;
     position: sticky;
@@ -1776,7 +1787,8 @@ body.is-thinking .orb::before {
     z-index: 100;
     align-items: center;
     justify-content: space-between;
-    padding: calc(0.6rem + env(safe-area-inset-top)) 1rem 0.6rem;
+    gap: 0.6rem;
+    padding: calc(0.55rem + env(safe-area-inset-top)) 0.9rem 0.55rem;
     background: var(--glass-bg-strong);
     backdrop-filter: blur(24px) saturate(180%);
     -webkit-backdrop-filter: blur(24px) saturate(180%);
@@ -1785,17 +1797,18 @@ body.is-thinking .orb::before {
   .mobile-top-left {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
+    gap: 0.55rem;
     min-width: 0;
   }
   .orb.small {
     width: 30px;
     height: 30px;
     flex: none;
+    animation: orb-breathe 4.5s ease-in-out infinite;
   }
   .mobile-title {
     font-family: var(--display);
-    font-size: 1.15rem;
+    font-size: 1.12rem;
     font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
@@ -1803,7 +1816,7 @@ body.is-thinking .orb::before {
   }
   .mobile-top-actions {
     display: flex;
-    gap: 0.3rem;
+    gap: 0.15rem;
     flex: none;
   }
   .mobile-icon {
@@ -1815,6 +1828,7 @@ body.is-thinking .orb::before {
     display: grid;
     place-items: center;
     cursor: pointer;
+    transition: background 0.15s;
   }
   .mobile-icon:active {
     background: var(--line-2);
@@ -1825,7 +1839,7 @@ body.is-thinking .orb::before {
     background: var(--ink-2);
   }
 
-  /* Barre d'onglets en bas, façon appli native */
+  /* --- Navbar basse --- */
   .tabbar {
     display: flex;
     position: fixed;
@@ -1833,21 +1847,22 @@ body.is-thinking .orb::before {
     right: 0;
     bottom: 0;
     z-index: 100;
-    padding: 0.35rem 0.4rem calc(0.35rem + env(safe-area-inset-bottom));
+    padding: 0.3rem 0.35rem calc(0.3rem + env(safe-area-inset-bottom));
     background: var(--glass-bg-strong);
     backdrop-filter: blur(24px) saturate(180%);
     -webkit-backdrop-filter: blur(24px) saturate(180%);
     border-top: 1px solid var(--glass-brd-soft);
   }
   .tab {
-    flex: 1;
+    flex: 1 1 0;
+    min-width: 0;
     border: none;
     background: none;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.18rem;
-    padding: 0.4rem 0.1rem;
+    gap: 0.16rem;
+    padding: 0.42rem 0.1rem;
     border-radius: 12px;
     cursor: pointer;
     color: var(--ink-3);
@@ -1862,76 +1877,65 @@ body.is-thinking .orb::before {
   }
   .tab-label {
     font-family: var(--font);
-    font-size: 0.66rem;
+    font-size: 0.65rem;
     font-weight: 600;
-    letter-spacing: 0.01em;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .tab.is-active {
     color: var(--accent-ink);
     background: var(--accent-soft);
   }
 
-  /* Contenu : marge basse pour ne pas passer sous la navbar */
-  .content {
-    padding: 1rem 0.9rem calc(5.5rem + env(safe-area-inset-bottom));
-    max-width: 100%;
-  }
-
-  /* Accueil */
+  /* --- Accueil --- */
   .hello {
     margin-bottom: 1.1rem;
   }
   .hello h1,
   .view-head h1 {
-    font-size: 1.55rem;
+    font-size: 1.5rem;
   }
   .hello p,
   .view-head p {
-    font-size: 0.92rem;
+    font-size: 0.9rem;
   }
-  .stats {
-    grid-template-columns: 1fr 1fr;
-    gap: 0.6rem;
-    margin-bottom: 1.2rem;
-  }
-  .stat {
-    padding: 0.85rem 0.9rem;
-  }
-  .stat .v {
-    font-size: 1.3rem;
-  }
-  .cards.two {
-    grid-template-columns: 1fr;
+  .view-head {
+    margin-bottom: 1.1rem;
   }
   .composer-hero {
     margin-bottom: 0.8rem;
   }
   .chips {
     margin-bottom: 1.4rem;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    padding-bottom: 0.3rem;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
   }
-  .chips::-webkit-scrollbar {
-    display: none;
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+    margin-bottom: 1.3rem;
   }
-  .chip {
-    flex: none;
+  .stat {
+    padding: 0.8rem 0.85rem;
+  }
+  .stat .v {
+    font-size: 1.25rem;
+  }
+  .cards.two {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  /* Discussions : liste en bandeau horizontal + fil plein écran */
+  /* --- Discussions : liste horizontale + fil plein écran --- */
   .chat-layout {
-    grid-template-columns: 1fr;
-    gap: 0.7rem;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.65rem;
   }
   .conv-sidebar {
     position: static;
     flex-direction: row;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem;
+    gap: 0.45rem;
+    padding: 0.45rem;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
@@ -1942,8 +1946,9 @@ body.is-thinking .orb::before {
   .new-conv {
     width: auto;
     flex: none;
-    padding: 0.6rem 0.85rem;
-    font-size: 0.84rem;
+    padding: 0.55rem 0.8rem;
+    font-size: 0.82rem;
+    white-space: nowrap;
   }
   .conv-list {
     flex-direction: row;
@@ -1953,60 +1958,56 @@ body.is-thinking .orb::before {
   }
   .conv-item {
     flex: none;
-    max-width: 62vw;
+    max-width: 60vw;
     background: var(--glass-bg);
     border: 1px solid var(--glass-brd);
-    padding: 0.5rem 0.7rem;
+    padding: 0.5rem 0.65rem;
   }
   .conv-item .ctitle {
-    max-width: 46vw;
+    max-width: 44vw;
   }
   .conv-item .cdel {
-    opacity: 0.65;
+    opacity: 0.6;
   }
   .conv-empty {
     white-space: nowrap;
-    padding: 0.5rem;
+    padding: 0.45rem;
   }
-
   .chat-card {
-    min-height: calc(100vh - 190px);
+    min-height: calc(100dvh - 200px);
   }
   .chat-head {
-    padding: 0.85rem 1rem 0.6rem;
+    padding: 0.8rem 0.9rem 0.55rem;
   }
   .chat-head h2 {
-    font-size: 1rem;
+    font-size: 0.98rem;
   }
   .messages {
-    padding: 1.1rem 1rem;
-    min-height: calc(100vh - 380px);
+    padding: 1rem 0.9rem;
+    min-height: calc(100dvh - 380px);
     max-height: none;
   }
   .msg {
     max-width: 88%;
   }
-  .composer {
-    padding-left: 0.9rem;
-  }
   .attach {
     display: none;
   }
   .chat-card .composer {
-    margin: 0 0.9rem 0.5rem;
+    margin: 0 0.8rem 0.5rem;
   }
   .chat-card .chips {
-    padding: 0 0.9rem 1rem;
+    padding: 0 0.8rem 0.9rem;
   }
   .attachments {
-    padding: 0 0.9rem 0.5rem;
+    padding: 0 0.8rem 0.45rem;
   }
 
-  /* Automatisations */
+  /* --- Automatisations --- */
   .job {
-    grid-template-columns: auto 1fr;
-    gap: 0.8rem;
-    padding: 0.95rem;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 0.9rem;
   }
   .job .job-actions {
     grid-column: 1 / -1;
@@ -2018,29 +2019,29 @@ body.is-thinking .orb::before {
     flex: 1;
   }
 
-  /* Souvenirs */
+  /* --- Souvenirs --- */
   .memory li {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 0.2rem;
   }
 
-  /* Surveillance */
+  /* --- Surveillance --- */
+  .watch-add {
+    flex-direction: column;
+  }
   .watch-add select,
   .watch-add input,
   .watch-add button {
     width: 100%;
   }
-  .watch-add {
-    flex-direction: column;
-  }
 
-  /* Infra */
+  /* --- Infra --- */
   .infra-nodes,
   .infra-vms {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  /* Palette plein écran */
+  /* --- Palette --- */
   .palette {
     padding-top: 8vh;
   }
@@ -2048,22 +2049,18 @@ body.is-thinking .orb::before {
     width: calc(100% - 1.5rem);
   }
 
-  /* Bandeau d'installation remonté au-dessus de la navbar */
-  .install-banner {
-    bottom: calc(4.6rem + env(safe-area-inset-bottom));
-    width: calc(100% - 1.4rem);
-  }
+  /* --- Bandeau d'install / toast au-dessus de la navbar --- */
+  .install-banner,
   .toast {
-    bottom: calc(4.6rem + env(safe-area-inset-bottom));
+    bottom: calc(4.75rem + env(safe-area-inset-bottom));
+  }
+  .install-banner {
+    width: calc(100% - 1.4rem);
   }
 }
 
-/* Très petits écrans */
 @media (max-width: 380px) {
-  .tab-label {
-    font-size: 0.6rem;
-  }
   .stats {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
