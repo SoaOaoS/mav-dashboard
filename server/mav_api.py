@@ -556,7 +556,10 @@ class Handler(BaseHTTPRequestHandler):
             ".css": "text/css; charset=utf-8",
             ".js": "application/javascript; charset=utf-8",
             ".svg": "image/svg+xml",
+            ".png": "image/png",
+            ".webmanifest": "application/manifest+json",
             ".json": "application/json",
+            ".ico": "image/x-icon",
         }.get(target.suffix, "application/octet-stream")
         return self._send(200, target.read_bytes(), ctype)
 
