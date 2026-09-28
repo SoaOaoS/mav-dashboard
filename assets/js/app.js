@@ -1190,6 +1190,18 @@ async function send(raw, cmd) {
     await new Promise((resolve, reject) => {
       const es = new EventSource(`/api/stream?${qs.toString()}`);
       let sessionFromServer = null;
+      let finished = false; // une réponse a été reçue / le flux est terminé
+      let gotAnyDelta = false;
+
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        try {
+          es.close();
+        } catch (_) {}
+        resolve();
+      };
+
       es.addEventListener("start", (e) => {
         try {
           sessionFromServer = JSON.parse(e.data).session;
@@ -1198,6 +1210,7 @@ async function send(raw, cmd) {
       es.addEventListener("delta", (e) => {
         const d = JSON.parse(e.data).delta || "";
         acc += d;
+        gotAnyDelta = true;
         if (!bubble) {
           $("#typing").hidden = true;
           bubble = addMsg("", "mav");
@@ -1208,10 +1221,12 @@ async function send(raw, cmd) {
       });
       // Les étapes d'outils ne sont plus affichées : on ne garde que la réponse.
       es.addEventListener("done", (e) => {
-        es.close();
+        finished = true;
         try {
           const d = JSON.parse(e.data);
           if (!sessionFromServer && d.session) sessionFromServer = d.session;
+          // Si le flux n'a émis aucun delta mais un texte final, on l'affiche.
+          if (!acc && d.text) acc = d.text;
         } catch (_) {}
         if (sessionFromServer && sessionFromServer !== CURRENT_SESSION) {
           CURRENT_SESSION = sessionFromServer;
@@ -1221,21 +1236,46 @@ async function send(raw, cmd) {
           // Rendu final + montage des graphiques/tableaux une fois complet.
           bubble.innerHTML = mdToHtml(acc);
           mountCharts(bubble);
+        } else {
+          addMsg(acc, "mav");
         }
+        try {
+          es.close();
+        } catch (_) {}
         resolve();
       });
+      // Le flux a explicitement signalé une erreur métier.
       es.addEventListener("error", (e) => {
-        es.close();
+        if (finished) return;
+        // EventSource émet aussi un "error" natif (sans e.data) quand la
+        // connexion se ferme après la réponse : on l'ignore si on a déjà du
+        // contenu, sinon on affiche une vraie erreur.
+        if (!e.data) {
+          if (gotAnyDelta || acc) return finish();
+          return finish();
+        }
         let msg = "Je n'ai pas pu joindre mon moteur.";
         try {
-          if (e.data) msg = "Erreur : " + JSON.parse(e.data).message;
+          msg = "Erreur : " + JSON.parse(e.data).message;
         } catch (_) {}
         addMsg(msg, "mav");
+        finished = true;
+        try {
+          es.close();
+        } catch (_) {}
         resolve();
       });
+      // Erreur réseau native : si rien n'est arrivé, on prévient ; sinon le
+      // "done" a déjà rendu la réponse, on ne double pas le message.
       es.onerror = () => {
-        es.close();
-        resolve();
+        if (finished) return;
+        window.setTimeout(() => {
+          if (finished) return;
+          if (gotAnyDelta || acc) return finish();
+          // Aucune donnée reçue : vraie panne de connexion.
+          if (!bubble) addMsg("Connexion interrompue avant la réponse.", "mav");
+          finish();
+        }, 1500);
       };
     });
   } catch (_) {
