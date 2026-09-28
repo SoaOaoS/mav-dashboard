@@ -814,6 +814,51 @@ def save_upload(name: str, data_b64: str, mime: str = "") -> dict:
     return {"url": f"file://{dest}", "mime": mt, "filename": safe}
 
 
+# --------------------------------------------------------------- assets
+# Permet à Mav de renvoyer des images dans le chat. On sert un fichier image
+# local via /api/asset?path=..., en n'autorisant que des images et une liste
+# de racines, pour ne jamais exposer un fichier arbitraire.
+ASSET_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif"}
+ASSET_ROOTS = [
+    Path("/tmp/mav-dashboard"),
+    Path("/tmp/opencode"),
+    Path(BOT_DIR).resolve() if BOT_DIR.exists() else Path("/home/opencode/bot"),
+    Path("/home/opencode/workspace"),
+    Path("/home/opencode/Downloads"),
+]
+
+
+def serve_asset(path: str):
+    """Retourne (bytes, mime) si le chemin est une image autorisée, sinon None."""
+    if not path:
+        return None
+    raw = urllib.parse.unquote(str(path))
+    if raw.startswith("file://"):
+        raw = raw[len("file://"):]
+    try:
+        p = Path(raw).resolve()
+    except Exception:
+        return None
+    if p.suffix.lower() not in ASSET_EXT or not p.is_file():
+        return None
+    allowed = False
+    for root in ASSET_ROOTS:
+        try:
+            if str(p).startswith(str(Path(root).resolve())):
+                allowed = True
+                break
+        except Exception:
+            continue
+    if not allowed:
+        return None
+    try:
+        data = p.read_bytes()
+    except Exception:
+        return None
+    mime = mimetypes.guess_type(p.name)[0] or "image/png"
+    return data, mime
+
+
 # Le moteur refuse application/octet-stream : on devine un type utile depuis
 # l'extension, pour les cas où le navigateur n'annonce rien (fichiers locaux).
 _EXT_MIME = {
@@ -1198,6 +1243,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"key": push_public_key()})
             if path == "/api/chart":
                 return self._send(200, get_chart(p.get("symbol", "SPY"), p.get("range", "1mo")))
+            if path == "/api/asset":
+                res = serve_asset(p.get("path", ""))
+                if not res:
+                    return self._send(404, "asset introuvable", "text/plain")
+                data, mime = res
+                return self._send(200, data, mime)
             if path == "/api/quotes":
                 syms = [s for s in (p.get("symbols") or "").split(",") if s.strip()]
                 return self._send(200, get_quotes(syms or MARKET_SYMBOLS))
