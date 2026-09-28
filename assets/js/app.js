@@ -302,6 +302,11 @@ function setChatTitle(title) {
   $("#chatTitle").textContent = title || "Nouvelle discussion";
 }
 
+/* Fait "vivre" Mav : la boule s'illumine quand il réfléchit */
+function thinking(on) {
+  document.body.classList.toggle("is-thinking", !!on);
+}
+
 function renderConvList() {
   if (!CONVS.length) {
     $("#convList").innerHTML =
@@ -430,6 +435,7 @@ async function send(raw, cmd) {
 
   const typing = $("#typing");
   typing.hidden = false;
+  thinking(true);
   messages.scrollTop = messages.scrollHeight;
 
   if (LIVE) {
@@ -439,12 +445,14 @@ async function send(raw, cmd) {
         session: CURRENT_SESSION || "",
       });
       typing.hidden = true;
+      thinking(false);
       addMsg(res.answer || "…", "mav");
       // Rafraîchit les titres (le premier échange peut auto-titrer côté moteur)
       await loadConvs();
       return;
     } catch (e) {
       typing.hidden = true;
+      thinking(false);
       addMsg(
         "Je n'ai pas réussi à joindre mon moteur. Réessaie dans un instant.",
         "mav",
@@ -462,6 +470,7 @@ async function send(raw, cmd) {
   setTimeout(
     () => {
       typing.hidden = true;
+      thinking(false);
       addMsg(reply, "mav");
     },
     700 + Math.random() * 500,
