@@ -479,7 +479,10 @@ def get_agents() -> dict:
             if isinstance(a, dict)
             and a.get("name")
             and a["name"] not in hidden
-            and a.get("mode") in (None, "all", "primary")
+            and not a.get("hidden")
+            # On propose primaires ET subagents : ils fonctionnent comme agent
+            # de session pour le chat.
+            and a.get("mode") in ("primary", "subagent", "all", None)
         )
         ordered = [n for n in PRIMARY_AGENTS if n in names] + [n for n in names if n not in PRIMARY_AGENTS]
         return {"agents": ordered or PRIMARY_AGENTS}
