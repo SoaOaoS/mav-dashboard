@@ -46,15 +46,27 @@ session Telegram, pour ne jamais perturber le bot qui tourne en parallèle.
 
 ## API
 
-| Méthode | Route              | Rôle                                    |
-| ------- | ------------------ | --------------------------------------- |
-| GET     | `/api/status`      | santé moteur, métriques, compteurs      |
-| GET     | `/api/jobs`        | jobs planifiés + dernière exécution     |
-| GET     | `/api/memory`      | conversations, facts, préférences       |
-| GET     | `/api/watch`       | items surveillés                        |
-| GET     | `/api/agents`      | agents disponibles                      |
-| GET     | `/api/connections` | état des services                       |
-| POST    | `/api/ask`         | envoie un prompt à la session dashboard |
+| Méthode | Route                 | Rôle                                |
+| ------- | --------------------- | ----------------------------------- |
+| GET     | `/api/status`         | santé moteur, métriques, compteurs  |
+| GET     | `/api/jobs`           | jobs planifiés + dernière exécution |
+| GET     | `/api/memory`         | conversations, facts, préférences   |
+| GET     | `/api/watch`          | items surveillés                    |
+| GET     | `/api/agents`         | agents disponibles                  |
+| GET     | `/api/connections`    | état des services                   |
+| GET     | `/api/sessions`       | liste des discussions du dashboard  |
+| GET     | `/api/session?id=`    | messages + titre d'une discussion   |
+| POST    | `/api/ask`            | envoie un prompt (param. `session`) |
+| POST    | `/api/session/new`    | crée une discussion                 |
+| POST    | `/api/session/rename` | renomme une discussion              |
+| POST    | `/api/session/delete` | supprime une discussion             |
+
+### Sessions
+
+Les discussions du dashboard sont des sessions opencode dont le titre commence
+par `dash: ` — ce préfixe les distingue des sessions Telegram et des jobs, sans
+registre local. Le front propose un gestionnaire type ChatGPT : créer, lister,
+ouvrir, renommer, supprimer.
 
 > ⚠️ **Pas d'authentification** : à réserver à un accès VPN. Ne pas exposer tel quel.
 
@@ -77,7 +89,7 @@ MAV_STATIC="$PWD" BOT_DIR="$HOME/bot" \
 ## Écrans
 
 - **Accueil** — salutation, barre de message, raccourcis, résumé du jour, automatisations.
-- **Discussions** — fil de chat continu (vrai agent en live).
+- **Discussions** — gestionnaire de conversations (créer, renommer, supprimer, basculer) + chat avec l'agent.
 - **Automatisations** — jobs planifiés, planning, état.
 - **Souvenirs** — ce que Mav retient (conversations, faits, préférences).
 - **Surveillance** — ce que Mav surveille, alerte seulement au changement.
