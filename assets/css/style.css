@@ -1462,8 +1462,83 @@ body.is-thinking .orb::before {
   min-width: 0;
 }
 .chat-agent {
+  position: relative;
   font-size: 0.76rem;
   color: var(--ink-3);
+  margin-top: 0.15rem;
+}
+/* Bouton sélecteur d'agent (remplace le <select> natif) */
+.agent-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font);
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--ink-2);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-brd);
+  border-radius: 999px;
+  padding: 0.18rem 0.6rem;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.agent-btn:hover {
+  border-color: var(--accent);
+  background: var(--glass-bg-strong);
+}
+.agent-btn.is-open {
+  border-color: var(--accent);
+}
+.agent-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+.agent-caret {
+  font-size: 0.6rem;
+  color: var(--ink-3);
+}
+.agent-menu {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  z-index: 50;
+  min-width: 10rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0.3rem;
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid var(--glass-brd);
+  border-radius: 12px;
+  box-shadow: 0 12px 34px rgba(20, 40, 60, 0.18);
+}
+.agent-opt {
+  text-align: left;
+  font-family: var(--font);
+  font-size: 0.82rem;
+  color: var(--ink-2);
+  background: none;
+  border: none;
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem;
+  cursor: pointer;
+}
+.agent-opt:hover {
+  background: var(--line-2);
+  color: var(--ink);
+}
+.agent-opt.is-sel {
+  color: var(--accent-ink);
+  font-weight: 700;
+  background: var(--accent-soft);
 }
 .chat-head-actions {
   display: flex;
@@ -2182,11 +2257,17 @@ body.is-thinking .orb::before {
 .bubble .md-h:first-child {
   margin-top: 0;
 }
-.bubble h2.md-h { font-size: 1.15rem; }
-.bubble h3.md-h { font-size: 1.06rem; }
+.bubble h2.md-h {
+  font-size: 1.15rem;
+}
+.bubble h3.md-h {
+  font-size: 1.06rem;
+}
 .bubble h4.md-h,
 .bubble h5.md-h,
-.bubble h6.md-h { font-size: 0.98rem; }
+.bubble h6.md-h {
+  font-size: 0.98rem;
+}
 
 .bubble .md-ul {
   margin: 0.3rem 0;
@@ -2233,14 +2314,30 @@ body.is-thinking .orb::before {
   color: var(--accent-ink);
   text-decoration: underline;
 }
-.bubble strong { font-weight: 700; }
-.bubble del { opacity: 0.65; }
+.bubble strong {
+  font-weight: 700;
+}
+.bubble del {
+  opacity: 0.65;
+}
 
 /* ---------- Résultats de jobs en markdown ---------- */
-.jr-preview .md-h { font-size: 0.95rem; margin: 0.4rem 0 0.2rem; }
-.jr-preview .md-ul { padding-left: 1.1rem; margin: 0.2rem 0; }
-.jr-preview .md-code { white-space: pre-wrap; word-break: break-word; }
-.jr-preview .md-inline { font-family: var(--font-mono, monospace); font-size: 0.85em; }
+.jr-preview .md-h {
+  font-size: 0.95rem;
+  margin: 0.4rem 0 0.2rem;
+}
+.jr-preview .md-ul {
+  padding-left: 1.1rem;
+  margin: 0.2rem 0;
+}
+.jr-preview .md-code {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.jr-preview .md-inline {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85em;
+}
 
 /* ---------- Tableaux markdown ---------- */
 .md-table-wrap {
@@ -2276,9 +2373,15 @@ body.is-thinking .orb::before {
 .md-table tbody tr:hover td {
   background: rgba(255, 255, 255, 0.45);
 }
-.md-table .md-right { text-align: right; }
-.md-table .md-center { text-align: center; }
-.md-table .md-left { text-align: left; }
+.md-table .md-right {
+  text-align: right;
+}
+.md-table .md-center {
+  text-align: center;
+}
+.md-table .md-left {
+  text-align: left;
+}
 
 /* Dans les résultats de jobs, on autorise le retour à la ligne. */
 .jr-preview .md-table th,
