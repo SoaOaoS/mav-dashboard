@@ -687,6 +687,9 @@ def stream_answer(prompt: str, sid: str, agent: str = "", files: list | None = N
     idle_deadline = 300
     last_seen = time.time()
     text = ""
+    # Type de chaque part, pour distinguer la réponse visible ("text") du
+    # raisonnement interne ("reasoning") — on ne veut montrer que la réponse.
+    part_types: dict[str, str] = {}
     try:
         for raw in resp:
             if time.time() - last_seen > idle_deadline:
@@ -704,15 +707,21 @@ def stream_answer(prompt: str, sid: str, agent: str = "", files: list | None = N
             last_seen = time.time()
             etype = ev.get("type")
 
-            if etype == "message.part.delta":
-                if props.get("field") == "text":
-                    delta = props.get("delta", "") or ""
-                    text += delta
-                    yield sse("delta", {"delta": delta})
-            elif etype == "message.part.updated":
+            if etype == "message.part.updated":
                 part = props.get("part") or {}
+                if part.get("id") and part.get("type"):
+                    part_types[part["id"]] = part["type"]
                 if part.get("type") == "tool":
                     yield sse("tool", {"tool": part.get("tool") or part.get("name") or "outil"})
+            elif etype == "message.part.delta":
+                if props.get("field") != "text":
+                    continue
+                # Ignore le raisonnement : on ne montre que la réponse finale.
+                if part_types.get(props.get("partID")) == "reasoning":
+                    continue
+                delta = props.get("delta", "") or ""
+                text += delta
+                yield sse("delta", {"delta": delta})
             elif etype == "session.status":
                 st = (props.get("status") or {}).get("type")
                 if st == "idle":
