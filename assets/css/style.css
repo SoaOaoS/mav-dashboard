@@ -373,12 +373,6 @@ body.is-thinking .orb::before {
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 8h8v8H8zM4 4h2V2H4v2zm14 0h2V2h-2v2zM4 22h2v-2H4v2zm14 0h2v-2h-2v2zM2 14h2v-2H2v2zm18 0h2v-2h-2v2zM2 10h2V8H2v2zm18 0h2V8h-2v2zM6 4h12v16H6z'/%3E%3C/svg%3E")
     center/contain no-repeat;
 }
-.nav-ico[data-ico="moon"] {
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 3a9 9 0 1 0 9 9c0-.5 0-1-.1-1.4A7 7 0 0 1 12 3z'/%3E%3C/svg%3E")
-    center/contain no-repeat;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 3a9 9 0 1 0 9 9c0-.5 0-1-.1-1.4A7 7 0 0 1 12 3z'/%3E%3C/svg%3E")
-    center/contain no-repeat;
-}
 .nav-ico[data-ico="bell"] {
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2a6 6 0 0 0-6 6v3l-2 4h16l-2-4V8a6 6 0 0 0-6-6zm0 20a2.5 2.5 0 0 0 2.5-2.5h-5A2.5 2.5 0 0 0 12 22z'/%3E%3C/svg%3E")
     center/contain no-repeat;
@@ -1749,60 +1743,6 @@ body.is-thinking .orb::before {
   padding: 0.6rem 1.1rem;
   font-size: 0.86rem;
   animation: rise 0.25s ease;
-}
-
-/* ---------- THÈME SOMBRE ---------- */
-body.dark {
-  --bg: #0e1418;
-  --bg-soft: #151d24;
-  --ink: #eaf1f4;
-  --ink-2: #b7c4cc;
-  --ink-3: #7d8f9a;
-  --line: #26333c;
-  --line-2: #1b252d;
-  --accent: #4fae90;
-  --accent-soft: rgba(79, 174, 144, 0.16);
-  --accent-ink: #9fdfc8;
-  --warm: #d79a63;
-  --warm-soft: rgba(215, 154, 99, 0.16);
-  --glass-bg: rgba(30, 42, 51, 0.6);
-  --glass-bg-strong: rgba(26, 37, 45, 0.78);
-  --glass-brd: rgba(120, 160, 180, 0.18);
-  --glass-brd-soft: rgba(120, 160, 180, 0.12);
-  --glass-highlight: rgba(255, 255, 255, 0.08);
-}
-body.dark::before {
-  background:
-    radial-gradient(
-      42% 38% at 18% 12%,
-      rgba(50, 120, 100, 0.6),
-      transparent 62%
-    ),
-    radial-gradient(
-      38% 34% at 85% 18%,
-      rgba(50, 80, 130, 0.55),
-      transparent 60%
-    ),
-    radial-gradient(
-      46% 42% at 78% 82%,
-      rgba(120, 80, 50, 0.45),
-      transparent 64%
-    ),
-    radial-gradient(40% 36% at 22% 86%, rgba(40, 90, 80, 0.5), transparent 62%),
-    linear-gradient(160deg, #0d1317, #101820 55%, #0c1216);
-}
-body.dark .bubble {
-  color: var(--ink);
-}
-body.dark .msg.mav .bubble {
-  background: rgba(40, 54, 64, 0.72);
-}
-body.dark .mini-bar {
-  background: rgba(255, 255, 255, 0.12);
-}
-body.dark .pal-item:hover,
-body.dark .pal-item.is-active {
-  background: rgba(255, 255, 255, 0.08);
 }
 
 /* ---------- RESPONSIVE ---------- */
