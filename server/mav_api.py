@@ -342,6 +342,66 @@ def set_job_enabled(name: str, enabled: bool) -> bool:
     return found
 
 
+JOB_PREFIX = "job-"
+
+
+def get_job_results(limit: int = 8) -> dict:
+    """Derniers résultats produits par les jobs planifiés.
+
+    Le bot lance chaque job dans une session « job-<nom> » (distincte du
+    dashboard et de Telegram). On lit la réponse assistant la plus récente
+    de ces sessions pour l'afficher sur l'accueil.
+    """
+    try:
+        sessions = http_json(f"{OPENCODE_URL}/session", timeout=8) or []
+    except Exception:
+        return {"results": []}
+
+    jobs = {j.get("name"): j for j in read_json(JOBS_FILE, [])}
+    job_sessions = []
+    for s in sessions:
+        title = str(s.get("title", ""))
+        if not title.startswith(JOB_PREFIX):
+            continue
+        t = s.get("time", {})
+        job_sessions.append({
+            "id": s["id"],
+            "name": title[len(JOB_PREFIX):],
+            "updated": t.get("updated") or t.get("created") or 0,
+        })
+    job_sessions.sort(key=lambda x: x.get("updated") or 0, reverse=True)
+
+    out = []
+    seen = set()
+    for js in job_sessions:
+        name = js["name"]
+        if name in seen:
+            continue
+        seen.add(name)
+        text = ""
+        try:
+            for m in reversed(session_messages(js["id"])):
+                if m["role"] == "mav" and m.get("text"):
+                    text = m["text"]
+                    break
+        except Exception:
+            pass
+        if not text:
+            continue
+        meta = jobs.get(name, {})
+        out.append({
+            "name": name,
+            "description": meta.get("description", ""),
+            "time": meta.get("time", ""),
+            "updated": js["updated"],
+            "text": text[:4000],
+            "session": js["id"],
+        })
+        if len(out) >= limit:
+            break
+    return {"results": out}
+
+
 def get_memory(limit: int = 20) -> dict:
     def q(sql, params=()):
         try:
@@ -925,6 +985,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, get_status())
             if path == "/api/jobs":
                 return self._send(200, get_jobs())
+            if path == "/api/job-results":
+                return self._send(200, get_job_results())
             if path == "/api/memory":
                 return self._send(200, get_memory())
             if path == "/api/watch":
