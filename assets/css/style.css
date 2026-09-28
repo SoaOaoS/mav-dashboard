@@ -2241,3 +2241,47 @@ body.is-thinking .orb::before {
 .jr-preview .md-ul { padding-left: 1.1rem; margin: 0.2rem 0; }
 .jr-preview .md-code { white-space: pre-wrap; word-break: break-word; }
 .jr-preview .md-inline { font-family: var(--font-mono, monospace); font-size: 0.85em; }
+
+/* ---------- Tableaux markdown ---------- */
+.md-table-wrap {
+  overflow-x: auto;
+  margin: 0.6rem 0;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.md-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.84rem;
+}
+.md-table th,
+.md-table td {
+  padding: 0.5rem 0.7rem;
+  text-align: left;
+  border-bottom: 1px solid var(--line-2);
+  white-space: nowrap;
+}
+.md-table th {
+  font-weight: 700;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.5);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.md-table tr:last-child td {
+  border-bottom: none;
+}
+.md-table tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.45);
+}
+.md-table .md-right { text-align: right; }
+.md-table .md-center { text-align: center; }
+.md-table .md-left { text-align: left; }
+
+/* Dans les résultats de jobs, on autorise le retour à la ligne. */
+.jr-preview .md-table th,
+.jr-preview .md-table td {
+  white-space: normal;
+}
