@@ -169,10 +169,34 @@ def cpu_pct() -> int | None:
 # --------------------------------------------------------------- proxmox
 
 
+def _opencode_config_path() -> Path:
+    """Localise la config opencode quel que soit l'utilisateur qui lance le service
+    (le service tourne en root, dont le HOME n'est pas /home/opencode)."""
+    env = os.environ.get("OPENCODE_CONFIG")
+    if env:
+        try:
+            if Path(env).is_file():
+                return Path(env)
+        except OSError:
+            pass
+    candidates = [
+        Path("/home/opencode/.config/opencode/opencode.json"),
+        Path.home() / ".config/opencode/opencode.json",
+        Path(os.path.expanduser("~")) / ".config/opencode/opencode.json",
+    ]
+    for c in candidates:
+        try:
+            if c.is_file():
+                return c
+        except OSError:
+            continue
+    return candidates[0]
+
+
 def _proxmox_conf() -> dict:
     """Récupère les accès Proxmox depuis la config opencode, sans les exposer."""
     try:
-        cfg = json.loads((Path.home() / ".config/opencode/opencode.json").read_text())
+        cfg = json.loads(_opencode_config_path().read_text())
         env = cfg.get("mcp", {}).get("proxmox", {}).get("environment", {})
         return {
             "host": env.get("PROXMOX_HOST", "192.168.1.28"),
