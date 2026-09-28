@@ -587,7 +587,53 @@ def save_upload(name: str, data_b64: str, mime: str = "") -> dict:
     dest = ATTACH_DIR / f"{int(time.time())}-{safe}"
     dest.write_bytes(base64.b64decode(data_b64))
     mt = mime or mimetypes.guess_type(safe)[0] or "application/octet-stream"
+    if mt == "application/octet-stream":
+        mt = _mime_from_ext(safe)
     return {"url": f"file://{dest}", "mime": mt, "filename": safe}
+
+
+# Le moteur refuse application/octet-stream : on devine un type utile depuis
+# l'extension, pour les cas où le navigateur n'annonce rien (fichiers locaux).
+_EXT_MIME = {
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".csv": "text/csv",
+    ".json": "application/json",
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".html": "text/html",
+    ".xml": "text/xml",
+    ".yaml": "text/yaml",
+    ".yml": "text/yaml",
+    ".py": "text/x-python",
+    ".js": "text/javascript",
+    ".ts": "text/typescript",
+    ".sh": "text/x-shellscript",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+
+
+def _mime_from_ext(name: str) -> str:
+    return _EXT_MIME.get(Path(name).suffix.lower(), "text/plain")
+
+
+def _guess_file(item: dict) -> dict:
+    """Complète une pièce jointe (mime/nom) à partir de son URL locale."""
+    url = item.get("url") or ""
+    path = url[len("file://"):] if url.startswith("file://") else url
+    name = item.get("filename") or Path(path).name
+    mime = item.get("mime") or ""
+    if not mime or mime == "application/octet-stream":
+        mime = mimetypes.guess_type(name)[0] or _mime_from_ext(name)
+        if mime == "application/octet-stream":
+            mime = _mime_from_ext(name)
+    return {"url": url, "mime": mime, "filename": name}
 
 
 def ensure_session(sid: str = "", agent: str = "") -> str:
@@ -917,8 +963,12 @@ class Handler(BaseHTTPRequestHandler):
         files = []
         if p.get("files"):
             try:
-                for u in json.loads(p["files"]):
-                    files.append({"url": u, "mime": "", "filename": ""})
+                raw = json.loads(p["files"])
+                for item in raw:
+                    if isinstance(item, str):
+                        files.append(_guess_file({"url": item}))
+                    elif isinstance(item, dict):
+                        files.append(_guess_file(item))
             except Exception:
                 pass
         self._sse_open()
