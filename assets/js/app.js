@@ -297,7 +297,7 @@ function renderJobResults(results) {
         <span class="jr-name">${esc(r.name)}</span>
         <span class="jr-time">${r.updated ? esc(fmtTime(r.updated)) + " · " + esc(fmtDate(Math.floor(r.updated / 1000))) : ""}</span>
       </div>
-      <div class="jr-preview">${esc(r.text)}</div>
+      <div class="jr-preview">${mdToHtml(r.text)}</div>
     </div>`,
     )
     .join("");
@@ -545,6 +545,96 @@ let streaming = false;
 let abortController = null;
 let pendingFiles = [];
 
+/* ---------- Mini renderer markdown (zéro dépendance) ----------
+   Gère : blocs de code ```, code inline, gras, italique, titres,
+   listes, citations, liens, et les sauts de ligne. Échappe le HTML
+   avant tout, pour éviter toute injection. */
+function escapeHtml(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function mdToHtml(src) {
+  let text = String(src == null ? "" : src);
+
+  // 1) On isole les blocs de code pour ne pas les transformer ensuite.
+  const codeBlocks = [];
+  text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+    const i = codeBlocks.length;
+    codeBlocks.push(
+      `<pre class="md-code"><code>${escapeHtml(code.replace(/\n$/, ""))}</code></pre>`,
+    );
+    return `\u0000CODE${i}\u0000`;
+  });
+
+  // 2) Échappe le reste.
+  text = escapeHtml(text);
+
+  // 3) Titres (###, ##, #) en début de ligne.
+  text = text.replace(/^######\s+(.+)$/gm, '<h6 class="md-h">$1</h6>');
+  text = text.replace(/^#####\s+(.+)$/gm, '<h6 class="md-h">$1</h6>');
+  text = text.replace(/^####\s+(.+)$/gm, '<h5 class="md-h">$1</h5>');
+  text = text.replace(/^###\s+(.+)$/gm, '<h4 class="md-h">$1</h4>');
+  text = text.replace(/^##\s+(.+)$/gm, '<h3 class="md-h">$1</h3>');
+  text = text.replace(/^#\s+(.+)$/gm, '<h2 class="md-h">$1</h2>');
+
+  // 4) Séparateur horizontal.
+  text = text.replace(/^\s*([-*_]){3,}\s*$/gm, '<hr class="md-hr">');
+
+  // 5) Citations.
+  text = text.replace(
+    /^&gt;\s?(.+)$/gm,
+    '<blockquote class="md-quote">$1</blockquote>',
+  );
+  text = text.replace(/<\/blockquote>\n<blockquote class="md-quote">/g, "<br>");
+
+  // 6) Listes à puces et ordonnées.
+  text = text.replace(/^[-*]\s+(.+)$/gm, '<li class="md-li">$1</li>');
+  text = text.replace(/^\d+\.\s+(.+)$/gm, '<li class="md-li">$1</li>');
+  text = text.replace(
+    /(<li class="md-li">[\s\S]*?<\/li>)(?!\s*<li)/g,
+    '<ul class="md-ul">$1</ul>',
+  );
+
+  // 7) Code inline.
+  text = text.replace(/`([^`\n]+)`/g, '<code class="md-inline">$1</code>');
+
+  // 8) Gras, italique, barré.
+  text = text.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  text = text.replace(/__([^_\n]+)__/g, "<strong>$1</strong>");
+  text = text.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  text = text.replace(/(^|[^_])_([^_\n]+)_/g, "$1<em>$2</em>");
+  text = text.replace(/~~([^~\n]+)~~/g, "<del>$1</del>");
+
+  // 9) Liens [texte](url) — on n'autorise que http(s).
+  text = text.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
+  );
+
+  // 10) Sauts de ligne (hors structures de blocs).
+  text = text.replace(/\n/g, "<br>");
+  text = text.replace(/([>])\s*<br>\s*(<li)/g, "$1$2"); // pas de <br> entre items
+  text = text.replace(
+    /<\/(li|h[2-6]|blockquote|ul|pre)>\s*<br>\s*(?=<li)/g,
+    "</$1>",
+  );
+  text = text.replace(/<(h[2-6]|ul|pre|hr|blockquote)[^>]*><br>/g, "<$1>");
+  text = text.replace(/<br>(<\/(h[2-6]|ul|pre|blockquote|li)>)/g, "$1");
+  text = text.replace(/<\/li><br>/g, "</li>");
+
+  // 11) Réinjecte les blocs de code.
+  text = text.replace(
+    /\u0000CODE(\d+)\u0000/g,
+    (_, i) => codeBlocks[Number(i)] || "",
+  );
+
+  return text;
+}
+
 function addMsg(text, who) {
   const el = document.createElement("div");
   el.className = `msg ${who}`;
@@ -552,10 +642,14 @@ function addMsg(text, who) {
     who === "mav"
       ? `<div class="avatar"></div><div class="bubble"></div>`
       : `<div class="bubble"></div>`;
-  el.querySelector(".bubble").textContent = text;
+  const bubble = el.querySelector(".bubble");
+  // Les réponses de Mav sont rendues en markdown ; les messages de
+  // l'utilisateur restent en texte brut.
+  if (who === "mav") bubble.innerHTML = mdToHtml(text);
+  else bubble.textContent = text;
   messages.appendChild(el);
   messages.scrollTop = messages.scrollHeight;
-  return el.querySelector(".bubble");
+  return bubble;
 }
 function addToolNote(text) {
   const el = document.createElement("div");
@@ -828,7 +922,8 @@ async function send(raw, cmd) {
           $("#typing").hidden = true;
           bubble = addMsg("", "mav");
         }
-        bubble.textContent = acc;
+        // Rendu markdown en direct pendant le streaming.
+        bubble.innerHTML = mdToHtml(acc);
         messages.scrollTop = messages.scrollHeight;
       });
       // Les étapes d'outils ne sont plus affichées : on ne garde que la réponse.
