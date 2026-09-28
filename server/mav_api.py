@@ -20,6 +20,7 @@ import subprocess
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -33,7 +34,6 @@ BOT_DIR = Path(os.environ.get("BOT_DIR", Path.home() / "bot"))
 JOBS_FILE = BOT_DIR / "jobs.json"
 JOBS_STATE = BOT_DIR / "jobs_state.json"
 MEMORY_FILE = BOT_DIR / "memory.json"
-DASH_SESSION_FILE = BOT_DIR / "dashboard_session.json"
 STATIC_DIR = Path(os.environ.get("MAV_STATIC", Path(__file__).resolve().parent.parent))
 
 OPENCODE_URL = os.environ.get("OPENCODE_URL", "http://127.0.0.1:4096").rstrip("/")
@@ -283,21 +283,124 @@ def get_agents() -> dict:
 
 
 # ------------------------------------------------------------------- chat
+#
+# Les discussions du dashboard sont des sessions opencode dont le titre
+# commence par PREFIX. Ça les distingue sans ambiguïté des sessions Telegram
+# et des jobs planifiés, sans registre local à maintenir.
+
+PREFIX = "dash: "
+DEFAULT_TITLE = "Nouvelle discussion"
 
 
-def dash_session_id() -> str:
-    data = read_json(DASH_SESSION_FILE, {})
-    sid = data.get("session")
-    if sid:
+def _list_raw_sessions() -> list[dict]:
+    try:
+        return http_json(f"{OPENCODE_URL}/session", timeout=8) or []
+    except Exception:
+        return []
+
+
+def _migrate_legacy() -> None:
+    """Renomme l'ancienne session unique au format préfixé."""
+    for s in _list_raw_sessions():
+        if s.get("title") == "dashboard":
+            try:
+                http_json(
+                    f"{OPENCODE_URL}/session/{s['id']}",
+                    method="PATCH",
+                    body={"title": PREFIX + "Première discussion"},
+                )
+            except Exception:
+                pass
+
+
+def list_sessions() -> list[dict]:
+    _migrate_legacy()
+    out = []
+    for s in _list_raw_sessions():
+        title = str(s.get("title", ""))
+        if not title.startswith(PREFIX):
+            continue
+        t = s.get("time", {})
+        out.append(
+            {
+                "id": s["id"],
+                "title": title[len(PREFIX):] or DEFAULT_TITLE,
+                "created": t.get("created"),
+                "updated": t.get("updated") or t.get("created"),
+            }
+        )
+    out.sort(key=lambda x: x.get("updated") or 0, reverse=True)
+    return out
+
+
+def create_session(title: str = "") -> dict:
+    name = (title or DEFAULT_TITLE).strip()[:80] or DEFAULT_TITLE
+    res = http_json(
+        f"{OPENCODE_URL}/session", method="POST", body={"title": PREFIX + name}
+    )
+    return {"id": res["id"], "title": name}
+
+
+def rename_session(sid: str, title: str) -> bool:
+    name = (title or "").strip()[:80]
+    if not sid or not name:
+        return False
+    for verb in ("PATCH", "PUT"):
         try:
-            http_json(f"{OPENCODE_URL}/session/{sid}", timeout=5)
-            return sid
+            http_json(
+                f"{OPENCODE_URL}/session/{sid}", method=verb, body={"title": PREFIX + name}
+            )
+            return True
         except Exception:
-            pass
-    res = http_json(f"{OPENCODE_URL}/session", method="POST", body={"title": "dashboard"})
-    sid = res["id"]
-    DASH_SESSION_FILE.write_text(json.dumps({"session": sid}))
-    return sid
+            continue
+    return False
+
+
+def delete_session(sid: str) -> bool:
+    if not sid:
+        return False
+    try:
+        http_json(f"{OPENCODE_URL}/session/{sid}", method="DELETE")
+        return True
+    except Exception:
+        return False
+
+
+def session_title(sid: str) -> str:
+    try:
+        s = http_json(f"{OPENCODE_URL}/session/{sid}", timeout=6) or {}
+        return str(s.get("title", ""))
+    except Exception:
+        return ""
+
+
+def session_messages(sid: str) -> list[dict]:
+    try:
+        entries = http_json(f"{OPENCODE_URL}/session/{sid}/message", timeout=12) or []
+    except Exception:
+        return []
+    msgs = []
+    for e in entries:
+        info = e.get("info") or {}
+        role = info.get("role")
+        if role not in ("user", "assistant"):
+            continue
+        parts = e.get("parts") or []
+        text = "\n\n".join(
+            (p.get("text") or "").strip()
+            for p in parts
+            if p.get("type") == "text" and not p.get("synthetic") and (p.get("text") or "").strip()
+        )
+        if not text:
+            continue
+        msgs.append(
+            {
+                "role": "me" if role == "user" else "mav",
+                "text": text,
+                "ts": (info.get("time") or {}).get("created"),
+            }
+        )
+    return msgs
 
 
 def _assistant_text(entry: dict) -> str:
@@ -310,8 +413,11 @@ def _assistant_text(entry: dict) -> str:
     return texts[-1] if texts else ""
 
 
-def ask(prompt: str, agent: str = "") -> str:
-    sid = dash_session_id()
+def ask(prompt: str, agent: str = "", sid: str = "") -> str:
+    if not sid:
+        # Aucune session fournie : on réutilise la plus récente, sinon on en crée une.
+        sessions = list_sessions()
+        sid = sessions[0]["id"] if sessions else create_session()["id"]
     try:
         before = len(http_json(f"{OPENCODE_URL}/session/{sid}/message", timeout=10) or [])
     except Exception:
@@ -376,7 +482,12 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
-        path = self.path.split("?", 1)[0]
+        path, _, query = self.path.partition("?")
+        params = {}
+        if query:
+            for pair in query.split("&"):
+                k, _, v = pair.partition("=")
+                params[k] = urllib.parse.unquote_plus(v)
         try:
             if path == "/api/status":
                 return self._send(200, get_status())
@@ -392,24 +503,46 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"connections": get_connections()})
             if path == "/api/health":
                 return self._send(200, {"ok": True, "ts": int(time.time())})
+            if path == "/api/sessions":
+                return self._send(200, {"sessions": list_sessions()})
+            if path == "/api/session":
+                sid = params.get("id", "")
+                if not sid:
+                    return self._send(400, {"error": "id manquant"})
+                return self._send(200, {"id": sid, "title": session_title(sid)[len(PREFIX):], "messages": session_messages(sid)})
             return self._static(path)
         except Exception as exc:  # noqa: BLE001
             return self._send(500, {"error": str(exc)})
 
     def do_POST(self):
         path = self.path.split("?", 1)[0]
-        if path != "/api/ask":
-            return self._send(404, {"error": "not found"})
         try:
             n = int(self.headers.get("Content-Length", 0))
             payload = json.loads(self.rfile.read(n) or b"{}")
+        except Exception:
+            payload = {}
+
+        if path == "/api/ask":
             prompt = (payload.get("prompt") or "").strip()
             if not prompt:
                 return self._send(400, {"error": "prompt manquant"})
-            answer = ask(prompt, payload.get("agent", ""))
-            return self._send(200, {"answer": answer})
-        except Exception as exc:  # noqa: BLE001
-            return self._send(500, {"error": str(exc)})
+            try:
+                answer = ask(prompt, payload.get("agent", ""), payload.get("session", ""))
+                return self._send(200, {"answer": answer})
+            except Exception as exc:  # noqa: BLE001
+                return self._send(500, {"error": str(exc)})
+        if path == "/api/session/new":
+            try:
+                return self._send(200, create_session(payload.get("title", "")))
+            except Exception as exc:  # noqa: BLE001
+                return self._send(500, {"error": str(exc)})
+        if path == "/api/session/rename":
+            ok = rename_session(payload.get("id", ""), payload.get("title", ""))
+            return self._send(200 if ok else 400, {"ok": ok})
+        if path == "/api/session/delete":
+            ok = delete_session(payload.get("id", ""))
+            return self._send(200 if ok else 400, {"ok": ok})
+        return self._send(404, {"error": "not found"})
 
     def _static(self, path: str):
         if path == "/":
