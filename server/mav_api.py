@@ -1038,15 +1038,50 @@ def abort_session(sid: str) -> None:
         pass
 
 
-def stream_answer(prompt: str, sid: str, agent: str = "", files: list | None = None):
-    """Générateur d'événements SSE pour une réponse en streaming.
+_agents_cache: dict = {"at": 0.0, "names": set()}
 
-    Émet : event: status/delta/tool/done/error, data: {…}
+
+def valid_agents() -> set:
+    """Noms d'agents réellement reconnus par le moteur (cache 60 s)."""
+    now = time.time()
+    if now - _agents_cache["at"] < 60 and _agents_cache["names"]:
+        return _agents_cache["names"]
+    names: set = set()
+    try:
+        data = http_json(f"{OPENCODE_URL}/agent", timeout=8) or []
+        if isinstance(data, list):
+            names = {a.get("name") for a in data if a.get("name")}
+        elif isinstance(data, dict):
+            names = set(data.keys())
+    except Exception:
+        pass
+    if names:
+        _agents_cache["at"] = now
+        _agents_cache["names"] = names
+    return names or _agents_cache["names"]
+
+
+def stream_answer(prompt: str, sid: str, agent: str = "", files: list | None = None):
+    """Réponse en SSE, collectée côté serveur : fiable et sans raisonnement.
+
+    On laisse le moteur exécuter la demande, puis on interroge les messages de
+    la session jusqu'à obtenir un message assistant terminé. Seules les parts
+    de type « text » sont envoyées : les étapes d'outils et le raisonnement
+    interne n'apparaissent jamais. La fin est détectée sur le champ `finish`
+    du message, pas sur un signal de flux qui peut se perdre.
     """
     sid = ensure_session(sid, agent)
     body: dict = {"parts": _parts(prompt, files or [])}
     ag = agent or DEFAULT_AGENT
+
+    def sse(event: str, data: dict) -> str:
+        return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
     if ag:
+        known = valid_agents()
+        if known and ag not in known:
+            yield sse("error", {"message": f"Agent inconnu : {ag}", "session": sid})
+            return
         body["agent"] = ag
     body.update(_model_body())
 
@@ -1063,8 +1098,12 @@ def stream_answer(prompt: str, sid: str, agent: str = "", files: list | None = N
     except Exception:
         pass
 
-    def sse(event: str, data: dict) -> str:
-        return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+    # Marqueur de départ : tout message antérieur à notre prompt est ignoré.
+    try:
+        before = http_json(f"{OPENCODE_URL}/session/{sid}/message", timeout=12) or []
+    except Exception:
+        before = []
+    before_ids = {(e.get("info") or {}).get("id") for e in before}
 
     try:
         http_json(f"{OPENCODE_URL}/session/{sid}/prompt_async", method="POST", body=body)
@@ -1074,71 +1113,84 @@ def stream_answer(prompt: str, sid: str, agent: str = "", files: list | None = N
 
     yield sse("start", {"session": sid})
 
-    # Écoute le flux global /event et filtre sur notre session.
-    try:
-        req = urllib.request.Request(f"{OPENCODE_URL}/event")
-        resp = urllib.request.urlopen(req, timeout=300)
-    except Exception as exc:  # noqa: BLE001
-        yield sse("error", {"message": f"flux indisponible : {exc}"})
+    deadline = time.time() + 900      # garde-fou global (15 min)
+    idle_limit = 240                  # sans progression réelle (4 min)
+    last_progress = time.time()
+    last_sig = None
+    last_text = ""
+    last_sent = ""
+    accepted = False
+    finished_text = None
+    engine_error = None
+
+    while time.time() < deadline and time.time() - last_progress < idle_limit:
+        time.sleep(0.4)
+        try:
+            entries = http_json(f"{OPENCODE_URL}/session/{sid}/message", timeout=12) or []
+        except Exception:
+            continue
+        if not entries:
+            continue
+
+        new_assistant = [
+            e for e in entries
+            if (e.get("info") or {}).get("id") not in before_ids
+            and (e.get("info") or {}).get("role") == "assistant"
+        ]
+        if not new_assistant:
+            continue
+        accepted = True
+
+        # Réponse visible uniquement : parts de type « text », jamais le reasoning.
+        text = "\n\n".join(_part_text(e.get("parts") or []) for e in new_assistant).strip()
+
+        last = new_assistant[-1]
+        linfo = last.get("info") or {}
+        # Signature de progression : nombre de messages, état de fin, longueur de
+        # la réponse visible, et état des outils en cours (running/completed).
+        tool_sig = tuple(
+            (p.get("id"), (p.get("state") or {}).get("status"))
+            for e in new_assistant
+            for p in (e.get("parts") or [])
+            if p.get("type") == "tool"
+        )
+        sig = (len(new_assistant), linfo.get("finish"), len(text), tool_sig)
+        if sig != last_sig:
+            last_sig = sig
+            last_progress = time.time()
+
+        if text != last_text:
+            last_text = text
+            delta = text[len(last_sent):] if text.startswith(last_sent) else text
+            last_sent = text
+            if delta:
+                yield sse("delta", {"delta": delta})
+
+        if linfo.get("error"):
+            err = linfo.get("error") or {}
+            engine_error = (
+                (err.get("data") or {}).get("message") or err.get("name") or "erreur du moteur"
+            )
+
+        last_has_text = bool(_part_text(last.get("parts") or []))
+        finish = linfo.get("finish")
+        # « tool-calls » = le modèle enchaîne sur des outils ; « None » = en cours.
+        # Tout autre finish (« stop », « length », « error »…) est terminal.
+        if finish is not None and finish != "tool-calls":
+            finished_text = text or last_text
+            break
+        # Erreur terminale sans réponse exploitable.
+        if engine_error and finish is not None and not last_has_text:
+            break
+
+    if not accepted and not finished_text:
+        yield sse("error", {"message": "La demande n'a pas pu être lancée.", "session": sid})
+        return
+    if engine_error and not finished_text:
+        yield sse("error", {"message": str(engine_error), "session": sid})
         return
 
-    started = time.time()
-    idle_deadline = 300
-    last_seen = time.time()
-    text = ""
-    # Type de chaque part, pour distinguer la réponse visible ("text") du
-    # raisonnement interne ("reasoning") — on ne veut montrer que la réponse.
-    part_types: dict[str, str] = {}
-    try:
-        for raw in resp:
-            if time.time() - last_seen > idle_deadline:
-                break
-            line = raw.decode("utf-8", "replace").strip()
-            if not line.startswith("data:"):
-                continue
-            try:
-                ev = json.loads(line[5:].strip())
-            except Exception:
-                continue
-            props = ev.get("properties") or {}
-            if props.get("sessionID") != sid:
-                continue
-            last_seen = time.time()
-            etype = ev.get("type")
-
-            if etype == "message.part.updated":
-                part = props.get("part") or {}
-                if part.get("id") and part.get("type"):
-                    part_types[part["id"]] = part["type"]
-                if part.get("type") == "tool":
-                    yield sse("tool", {"tool": part.get("tool") or part.get("name") or "outil"})
-            elif etype == "message.part.delta":
-                if props.get("field") != "text":
-                    continue
-                # Ignore le raisonnement : on ne montre que la réponse finale.
-                if part_types.get(props.get("partID")) == "reasoning":
-                    continue
-                delta = props.get("delta", "") or ""
-                text += delta
-                yield sse("delta", {"delta": delta})
-            elif etype == "session.status":
-                st = (props.get("status") or {}).get("type")
-                if st == "idle":
-                    yield sse("done", {"session": sid, "text": text})
-                    return
-            elif etype == "session.error":
-                err = props.get("error") or {}
-                msg = (err.get("data") or {}).get("message") or err.get("name") or "erreur"
-                yield sse("error", {"message": str(msg)})
-                return
-            if time.time() - started > 600:
-                break
-    finally:
-        try:
-            resp.close()
-        except Exception:
-            pass
-    yield sse("done", {"session": sid, "text": text})
+    yield sse("done", {"session": sid, "text": finished_text or last_text})
 
 
 def ask(prompt: str, agent: str = "", sid: str = "", files: list | None = None) -> str:
