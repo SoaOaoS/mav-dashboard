@@ -4,7 +4,7 @@
    ligne. JAMAIS de cache pour /api/* (état temps réel de l'agent).
 */
 
-const CACHE = "mav-shell-v4";
+const CACHE = "mav-shell-v5";
 const SHELL = [
   "./",
   "./index.html",
