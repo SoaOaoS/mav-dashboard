@@ -450,6 +450,19 @@ def get_watch() -> dict:
     return {"items": items}
 
 
+def get_notifications(limit: int = 30) -> dict:
+    """Historique des notifications proactives (veille + jobs)."""
+    try:
+        rows = pg_query(
+            "select ts, topic, title, body, channels, delivered "
+            "from notifications order by ts desc limit %s",
+            (limit,),
+        )
+    except Exception:
+        rows = []
+    return {"notifications": rows}
+
+
 VALID_WATCH_KINDS = ["web", "mail", "github", "moodle", "proxmox", "health"]
 
 
@@ -1301,24 +1314,10 @@ def send_push(title: str, body: str, url: str = "./") -> int:
     return sent
 
 
-def push_watch_loop() -> None:
-    """Surveille les changements d'état de la veille et pousse une notif."""
-    seen: dict[int, str] = {}
-    while True:
-        try:
-            items = pg_query("select id, kind, target, last_state from watch_items")
-            for it in items:
-                iid = it["id"]
-                state = it.get("last_state")
-                if iid in seen and state != seen[iid] and state:
-                    send_push(
-                        f"Veille · {it['kind']}",
-                        f"{it['target']}\n{state}",
-                    )
-                seen[iid] = state
-        except Exception:
-            pass
-        time.sleep(60)
+# La veille et la poussée des notifications sont désormais gérées par le bot
+# Telegram (`~/bot/ocnotify.py` + `ocwatch.py`), avec dédup et heures calmes.
+# Le dashboard ne fait que fournir les clés VAPID, stocker les abonnements et
+# exposer l'historique (`/api/notifications`).
 
 
 # ------------------------------------------------------------------- server
@@ -1398,6 +1397,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, get_memory())
             if path == "/api/watch":
                 return self._send(200, get_watch())
+            if path == "/api/notifications":
+                return self._send(200, get_notifications())
             if path == "/api/agents":
                 return self._send(200, get_agents())
             if path == "/api/connections":
@@ -1587,8 +1588,6 @@ def main():
 
     srv = ThreadedHTTPServer((BIND, PORT), Handler)
     print(f"mav-api en écoute sur http://{BIND}:{PORT} (statique: {STATIC_DIR})", flush=True)
-
-    threading.Thread(target=push_watch_loop, daemon=True).start()
 
     if TLS_PORT and TLS_CERT and TLS_KEY:
         try:
