@@ -110,6 +110,20 @@ def write_json(path: Path, data) -> None:
     tmp = Path(path).with_suffix(".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1))
     tmp.replace(path)
+    # Ce fichier est partagé avec le bot (utilisateur « opencode »), qui tourne
+    # sous un autre compte. Le dashboard est en root : on lui rend la propriété
+    # pour que le bot puisse aussi écrire dedans (nettoyage des abonnements).
+    try:
+        if path.name == "push_subs.json":
+            import grp
+            import pwd
+
+            uid = pwd.getpwnam("opencode").pw_uid
+            gid = grp.getgrnam("opencode").gr_gid
+            os.chown(path, uid, gid)
+            os.chmod(path, 0o664)
+    except Exception:
+        pass
 
 
 def sys_metrics() -> dict:
@@ -1312,6 +1326,8 @@ def send_push(title: str, body: str, url: str = "./") -> int:
                 data=payload,
                 vapid_private_key=vapid,
                 vapid_claims={"sub": "mailto:raphael.girard.tech@gmail.com"},
+                ttl=86400,
+                headers={"Urgency": "high"},
                 timeout=15,
             )
             sent += 1
@@ -1558,6 +1574,11 @@ class Handler(BaseHTTPRequestHandler):
                 f = save_upload(payload.get("name", "fichier"), payload.get("data", ""), payload.get("mime", ""))
                 return self._send(200, f)
             if path == "/api/push/subscribe":
+                # On mémorise l'appareil pour diagnostiquer (headless vs vrai tel).
+                try:
+                    payload["_ua"] = self.headers.get("User-Agent", "")[:200]
+                except Exception:
+                    pass
                 ok = push_subscribe(payload)
                 return self._send(200, {"ok": ok})
             if path == "/api/push/unsubscribe":
@@ -1566,6 +1587,21 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/push/test":
                 n = send_push("Mav", "Ceci est une notification de test.")
                 return self._send(200, {"sent": n})
+            if path == "/api/push/ack":
+                # Accusé de réception du service worker : prouve que le push est
+                # bien arrivé sur l'appareil (diagnostic de livraison).
+                try:
+                    pg_exec(
+                        "insert into notifications (ts, chat_id, topic, title, body, channels, delivered) "
+                        "values (%s, %s, %s, %s, %s, %s, %s)",
+                        (int(time.time()), None, "push_ack",
+                         str(payload.get("title", ""))[:200],
+                         str(payload.get("body", ""))[:500],
+                         ["ack"], True),
+                    )
+                except Exception:
+                    pass
+                return self._send(200, {"ok": True})
             return self._send(404, {"error": "not found"})
         except Exception as exc:  # noqa: BLE001
             return self._send(500, {"error": str(exc)})
