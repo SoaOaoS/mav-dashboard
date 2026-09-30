@@ -4,7 +4,7 @@
    ligne. JAMAIS de cache pour /api/* (état temps réel de l'agent).
 */
 
-const CACHE = "mav-shell-v6";
+const CACHE = "mav-shell-v9";
 const SHELL = [
   "./",
   "./index.html",
@@ -85,13 +85,30 @@ self.addEventListener("push", (event) => {
     if (event.data) data = Object.assign(data, event.data.json());
   } catch (_) {}
   event.waitUntil(
-    self.registration.showNotification(data.title || "Mav", {
-      body: data.body || "",
-      icon: "icons/icon-192.png",
-      badge: "icons/icon-192.png",
-      data: { url: data.url || "./" },
-      tag: data.tag || undefined,
-    }),
+    (async () => {
+      // Affiche la notification d'abord (priorité absolue).
+      await self.registration.showNotification(data.title || "Mav", {
+        body: data.body || "",
+        icon: "icons/icon-192.png",
+        badge: "icons/icon-192.png",
+        data: { url: data.url || "./" },
+        tag: data.tag || undefined,
+      });
+      // Accusé de réception (diagnostic) : ne doit jamais bloquer l'affichage.
+      try {
+        const ctl = new AbortController();
+        setTimeout(() => ctl.abort(), 4000);
+        await fetch("/api/push/ack", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: data.title || "Mav",
+            body: data.body || "",
+          }),
+          signal: ctl.signal,
+        });
+      } catch (_) {}
+    })(),
   );
 });
 
