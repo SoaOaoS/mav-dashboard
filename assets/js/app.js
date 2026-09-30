@@ -1556,59 +1556,87 @@ welcome();
 
 /* ---------- Chargement ---------- */
 async function loadLive() {
+  // Seule la sonde « status » décide si on est en direct. Les autres appels
+  // échouent indépendamment : un endpoint en retard ne doit pas faire passer
+  // toute l'interface en mode démo.
+  let status = null;
   try {
-    const [status, conns, jobs, mem, watch, agents, jobResults] =
-      await Promise.all([
-        api.get("status"),
-        api.get("connections"),
-        api.get("jobs"),
-        api.get("memory"),
-        api.get("watch"),
-        api.get("agents"),
-        api.get("job-results"),
-      ]);
-    LIVE = true;
-    document.body.dataset.mode = "live";
-    renderStatus(status);
-    renderConnections(conns.connections || []);
-    renderJobs(jobs.jobs || []);
-    renderMiniJobs(jobs.jobs || []);
-    renderJobResults(jobResults.results || []);
-    CACHED_MEMORY = mem;
-    renderMemory(mem);
-    renderWatch(watch);
-    renderToday([{ t: "—", text: "Connecté au moteur de l'agent en direct." }]);
-    AGENTS = agents.agents || [];
-    CURRENT_AGENT = localStorage.getItem("mav-agent") || AGENTS[0] || "";
-    renderAgentSelect();
+    status = await api.get("status");
+  } catch (_) {
+    status = null;
+  }
 
+  if (!status) {
+    enterMock();
+    return;
+  }
+
+  LIVE = true;
+  document.body.dataset.mode = "live";
+  renderStatus(status);
+
+  const soft = async (path, fn) => {
+    try {
+      fn(await api.get(path));
+    } catch (_) {
+      /* endpoint secondaire indisponible : on garde le reste */
+    }
+  };
+
+  await Promise.all([
+    soft("connections", (d) => renderConnections(d.connections || [])),
+    soft("jobs", (d) => {
+      renderJobs(d.jobs || []);
+      renderMiniJobs(d.jobs || []);
+    }),
+    soft("job-results", (d) => renderJobResults(d.results || [])),
+    soft("memory", (d) => {
+      CACHED_MEMORY = d;
+      renderMemory(d);
+    }),
+    soft("watch", (d) => renderWatch(d)),
+    soft("agents", (d) => {
+      AGENTS = d.agents || [];
+      CURRENT_AGENT = localStorage.getItem("mav-agent") || AGENTS[0] || "";
+      renderAgentSelect();
+    }),
+  ]);
+
+  renderToday([{ t: "—", text: "Connecté au moteur de l'agent en direct." }]);
+
+  try {
     await loadConvs();
     if (CONVS.length) await openSession(CONVS[0].id);
     else await newSession();
-  } catch (e) {
-    LIVE = false;
-    document.body.dataset.mode = "mock";
-    renderStatus({
-      mode: "mock",
-      jobs_active: MOCK.jobs.filter((j) => j.enabled).length,
-      conversations: "—",
-      facts: "—",
-      watch_items: "—",
-    });
-    renderConnections(MOCK.connections);
-    renderJobs(MOCK.jobs);
-    renderMiniJobs(MOCK.jobs);
-    renderJobResults(MOCK.jobResults);
-    CACHED_MEMORY = MOCK.memory;
-    renderMemory(MOCK.memory);
-    renderWatch(MOCK.watch);
-    renderToday(MOCK.today);
-    AGENTS = MOCK.agents;
-    CURRENT_AGENT = AGENTS[0];
-    renderAgentSelect();
-    CURRENT_SESSION = "mock";
+  } catch (_) {
+    CURRENT_SESSION = "";
     renderConvList();
   }
+}
+
+function enterMock() {
+  LIVE = false;
+  document.body.dataset.mode = "mock";
+  renderStatus({
+    mode: "mock",
+    jobs_active: MOCK.jobs.filter((j) => j.enabled).length,
+    conversations: "—",
+    facts: "—",
+    watch_items: "—",
+  });
+  renderConnections(MOCK.connections);
+  renderJobs(MOCK.jobs);
+  renderMiniJobs(MOCK.jobs);
+  renderJobResults(MOCK.jobResults);
+  CACHED_MEMORY = MOCK.memory;
+  renderMemory(MOCK.memory);
+  renderWatch(MOCK.watch);
+  renderToday(MOCK.today);
+  AGENTS = MOCK.agents;
+  CURRENT_AGENT = AGENTS[0];
+  renderAgentSelect();
+  CURRENT_SESSION = "mock";
+  renderConvList();
 }
 loadLive();
 
