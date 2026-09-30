@@ -1647,6 +1647,49 @@ async function loadLive() {
     CURRENT_SESSION = "";
     renderConvList();
   }
+
+  // Une notification a été cliquée : on ouvre une discussion dédiée et on
+  // demande le détail de l'alerte.
+  await maybeOpenNotif();
+}
+
+function notifParam() {
+  try {
+    return new URLSearchParams(location.search).get("notif");
+  } catch (_) {
+    return null;
+  }
+}
+
+async function maybeOpenNotif() {
+  const id = notifParam();
+  if (!id) return;
+  // Nettoie l'URL pour ne pas rejouer au prochain rechargement.
+  try {
+    history.replaceState(null, "", location.pathname);
+  } catch (_) {}
+  let n = null;
+  try {
+    n = (await api.get(`notification?id=${encodeURIComponent(id)}`))
+      .notification;
+  } catch (_) {}
+  if (!n) {
+    go("chat");
+    toast("Alerte introuvable.");
+    return;
+  }
+  await newSession();
+  setChatTitle("Alerte · " + String(n.title || "").slice(0, 40));
+  const topic =
+    n.topic === "watch" ? "de veille" : n.topic === "job" ? "de job" : "";
+  const prompt =
+    `Détaille-moi cette alerte ${topic} que tu m'as envoyée.\n\n` +
+    `Titre : ${n.title || ""}\n` +
+    `Info : ${n.body || ""}\n\n` +
+    "Explique le contexte, pourquoi ça compte, et ce qu'il faut regarder ensuite. " +
+    "Sois concret et bref.";
+  go("chat");
+  await send(prompt, null);
 }
 
 function enterMock() {
