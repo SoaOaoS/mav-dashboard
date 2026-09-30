@@ -1290,10 +1290,17 @@ def push_unsubscribe(endpoint: str) -> bool:
 
 def send_push(title: str, body: str, url: str = "./") -> int:
     try:
-        from pywebpush import webpush
+        from py_vapid import Vapid01
+        from pywebpush import webpush, WebPushException
     except Exception:
         return 0
-    pem, _ = _vapid_keys()
+    if not PUSH_FILE.exists():
+        return 0
+    try:
+        pem, _ = _vapid_keys()
+        vapid = Vapid01.from_pem(pem.encode())
+    except Exception:
+        return 0
     subs = read_json(PUSH_FILE, [])
     sent = 0
     alive = []
@@ -1303,13 +1310,20 @@ def send_push(title: str, body: str, url: str = "./") -> int:
             webpush(
                 subscription_info=s,
                 data=payload,
-                vapid_private_key=pem,
+                vapid_private_key=vapid,
                 vapid_claims={"sub": "mailto:raphael.girard.tech@gmail.com"},
+                timeout=15,
             )
             sent += 1
             alive.append(s)
+        except WebPushException as exc:
+            code = getattr(getattr(exc, "response", None), "status_code", None)
+            if code in (404, 410):
+                pass  # abonnement définitivement expiré : on le retire
+            else:
+                alive.append(s)  # erreur transitoire : on garde l'abonné
         except Exception:
-            pass  # abonnement mort : on ne le garde pas
+            alive.append(s)
     write_json(PUSH_FILE, alive)
     return sent
 
