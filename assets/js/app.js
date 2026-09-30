@@ -1429,7 +1429,16 @@ function urlB64ToUint8Array(b64) {
   const raw = atob((b64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
   return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 }
-$("#notifyToggle").addEventListener("click", async () => {
+
+// Synchronise l'état visuel des boutons push (sidebar + mobile).
+function setNotifyUi(on) {
+  N.enabled = on;
+  document
+    .querySelectorAll("#notifyToggle, #mobileNotify")
+    .forEach((el) => el.classList.toggle("is-on", on));
+}
+
+async function togglePushNotify() {
   if (!("Notification" in window) || !("serviceWorker" in navigator)) {
     return toast("Notifications non supportées.");
   }
@@ -1442,8 +1451,7 @@ $("#notifyToggle").addEventListener("click", async () => {
         await sub.unsubscribe();
       }
     } catch (_) {}
-    N.enabled = false;
-    $("#notifyToggle").classList.remove("is-on");
+    setNotifyUi(false);
     return toast("Notifications désactivées.");
   }
   try {
@@ -1456,13 +1464,26 @@ $("#notifyToggle").addEventListener("click", async () => {
       applicationServerKey: urlB64ToUint8Array(key),
     });
     await api.post("push/subscribe", sub.toJSON());
-    N.enabled = true;
-    $("#notifyToggle").classList.add("is-on");
+    setNotifyUi(true);
     toast("Notifications activées.");
   } catch (_) {
     toast("Échec de l'activation.");
   }
-});
+}
+
+$("#notifyToggle").addEventListener("click", togglePushNotify);
+$("#mobileNotify").addEventListener("click", togglePushNotify);
+
+// Au chargement : reflète l'état réel de l'abonnement.
+(async () => {
+  try {
+    if (!("serviceWorker" in navigator) || !("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) setNotifyUi(true);
+  } catch (_) {}
+})();
 
 /* ---------- Palette de commandes (⌘K) ---------- */
 const palette = $("#palette");
