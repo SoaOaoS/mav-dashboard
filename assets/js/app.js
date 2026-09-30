@@ -1668,6 +1668,11 @@ async function maybeOpenNotif() {
   try {
     history.replaceState(null, "", location.pathname);
   } catch (_) {}
+  await openNotifById(id);
+}
+
+async function openNotifById(id) {
+  if (!id || !LIVE) return;
   let n = null;
   try {
     n = (await api.get(`notification?id=${encodeURIComponent(id)}`))
@@ -1745,6 +1750,12 @@ if ("serviceWorker" in navigator) {
       if (reloaded) return;
       reloaded = true;
       location.reload();
+    });
+    // Le SW signale un clic sur une notification alors que l'app est ouverte.
+    navigator.serviceWorker.addEventListener("message", (e) => {
+      if (e.data && e.data.type === "open-notif" && e.data.id) {
+        openNotifById(String(e.data.id));
+      }
     });
   });
 }
