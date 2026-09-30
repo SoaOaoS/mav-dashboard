@@ -477,6 +477,18 @@ def get_notifications(limit: int = 30) -> dict:
     return {"notifications": rows}
 
 
+def get_notification(nid: int) -> dict:
+    """Une notification par id (pour ouvrir son détail depuis le push)."""
+    try:
+        rows = pg_query(
+            "select id, ts, topic, title, body, delivered from notifications where id = %s",
+            (nid,),
+        )
+    except Exception:
+        rows = []
+    return {"notification": rows[0] if rows else None}
+
+
 VALID_WATCH_KINDS = ["web", "mail", "github", "moodle", "proxmox", "health", "stock"]
 
 
@@ -1429,6 +1441,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, get_watch())
             if path == "/api/notifications":
                 return self._send(200, get_notifications())
+            if path == "/api/notification":
+                return self._send(200, get_notification(int(p.get("id", 0) or 0)))
             if path == "/api/agents":
                 return self._send(200, get_agents())
             if path == "/api/connections":
