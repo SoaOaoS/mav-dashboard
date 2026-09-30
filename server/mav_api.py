@@ -1324,8 +1324,24 @@ def push_watch_loop() -> None:
 # ------------------------------------------------------------------- server
 
 
+class ThreadedHTTPServer(ThreadingHTTPServer):
+    """Serveur HTTP/1.1 avec keep-alive et file d'attente d'écoute large.
+
+    Par défaut, http.server reste en HTTP/1.0 (une connexion par requête) et
+    n'accepte que 5 connexions en attente — au chargement à froid, un
+    navigateur ouvre plusieurs connexions en parallèle et peut se faire
+    refuser/timer. On active donc le keep-alive et on élargit le backlog.
+    """
+
+    daemon_threads = True
+    allow_reuse_address = True
+    request_queue_size = 128
+    protocol_version = "HTTP/1.1"
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "mav-api/0.2"
+    protocol_version = "HTTP/1.1"
 
     def log_message(self, *a):
         pass
@@ -1569,14 +1585,14 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     import ssl
 
-    srv = ThreadingHTTPServer((BIND, PORT), Handler)
+    srv = ThreadedHTTPServer((BIND, PORT), Handler)
     print(f"mav-api en écoute sur http://{BIND}:{PORT} (statique: {STATIC_DIR})", flush=True)
 
     threading.Thread(target=push_watch_loop, daemon=True).start()
 
     if TLS_PORT and TLS_CERT and TLS_KEY:
         try:
-            tsrv = ThreadingHTTPServer((BIND, TLS_PORT), Handler)
+            tsrv = ThreadedHTTPServer((BIND, TLS_PORT), Handler)
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             ctx.load_cert_chain(TLS_CERT, TLS_KEY)
             tsrv.socket = ctx.wrap_socket(tsrv.socket, server_side=True)
