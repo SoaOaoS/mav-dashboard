@@ -4,7 +4,7 @@
    ligne. JAMAIS de cache pour /api/* (état temps réel de l'agent).
 */
 
-const CACHE = "mav-shell-v9";
+const CACHE = "mav-shell-v10";
 const SHELL = [
   "./",
   "./index.html",
@@ -119,8 +119,15 @@ self.addEventListener("notificationclick", (event) => {
     clients
       .matchAll({ type: "window", includeUncontrolled: true })
       .then((list) => {
+        // Un onglet Mav est déjà ouvert : on le focus et on le navigue vers
+        // l'URL de la notif (pour ouvrir le détail du chat).
         for (const c of list) {
-          if ("focus" in c) return c.focus();
+          if ("focus" in c) {
+            try {
+              if (c.navigate) c.navigate(url);
+            } catch (_) {}
+            return c.focus();
+          }
         }
         if (clients.openWindow) return clients.openWindow(url);
       }),
