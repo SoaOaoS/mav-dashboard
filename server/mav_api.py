@@ -463,7 +463,7 @@ def get_notifications(limit: int = 30) -> dict:
     return {"notifications": rows}
 
 
-VALID_WATCH_KINDS = ["web", "mail", "github", "moodle", "proxmox", "health"]
+VALID_WATCH_KINDS = ["web", "mail", "github", "moodle", "proxmox", "health", "stock"]
 
 
 def watch_add(kind: str, target: str) -> bool:
