@@ -1474,6 +1474,20 @@ async function togglePushNotify() {
 $("#notifyToggle").addEventListener("click", togglePushNotify);
 $("#mobileNotify").addEventListener("click", togglePushNotify);
 
+// Bouton « tester » : envoie un push immédiat pour vérifier la livraison.
+const testBtn = $("#mobileNotifyTest");
+if (testBtn) {
+  testBtn.addEventListener("click", async () => {
+    if (!N.enabled) return toast("Active d'abord les notifications (cloche).");
+    try {
+      const r = await api.post("push/test", {});
+      toast(r.sent ? "Push de test envoyé." : "Aucun abonné à qui envoyer.");
+    } catch (_) {
+      toast("Échec de l'envoi.");
+    }
+  });
+}
+
 // Au chargement : reflète l'état réel de l'abonnement.
 (async () => {
   try {
