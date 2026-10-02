@@ -102,6 +102,9 @@
           <button class="nav-item" data-view="system">
             <span class="nav-ico" data-ico="cpu"></span> Infra
           </button>
+          <button class="nav-item" data-view="settings">
+            <span class="nav-ico" data-ico="sliders"></span> Réglages
+          </button>
         </nav>
 
         <div class="side-block">
@@ -354,6 +357,117 @@
           <div class="infra-nodes" id="infraNodes"></div>
           <div class="infra-vms" id="infraVms"></div>
         </section>
+
+        <!-- SETTINGS -->
+        <section class="view" id="view-settings">
+          <header class="view-head">
+            <h1>Réglages</h1>
+            <p>Ton agent, tes règles — édite AGENTS.md et tes serveurs MCP.</p>
+          </header>
+
+          <div class="card engine-card" id="engineCard">
+            <div class="engine-head">
+              <div class="engine-title">
+                <span class="engine-dot" id="engineDot"></span>
+                <strong id="engineLabel">État du moteur</strong>
+              </div>
+              <button class="ghost-btn" id="engineRefresh">Rafraîchir</button>
+            </div>
+            <div class="engine-meta" id="engineMeta"></div>
+            <div class="engine-actions">
+              <button class="btn-primary" id="engineRestart">
+                Relancer le moteur
+              </button>
+              <span class="hint">Applique AGENTS.md et les MCP.</span>
+            </div>
+          </div>
+
+          <div class="settings-tabs">
+            <button class="settings-tab is-active" data-stab="agents">
+              AGENTS.md
+            </button>
+            <button class="settings-tab" data-stab="agentfiles">
+              Agents
+            </button>
+            <button class="settings-tab" data-stab="mcp">Serveurs MCP</button>
+          </div>
+
+          <div class="settings-panel is-active" id="panel-agents">
+            <div class="editor-bar">
+              <span class="editor-path" id="agentsPath"></span>
+              <div class="editor-actions">
+                <span class="editor-status" id="agentsStatus"></span>
+                <button class="ghost-btn" id="agentsReload">Recharger</button>
+                <button class="btn-primary" id="agentsSave">Enregistrer</button>
+              </div>
+            </div>
+            <textarea
+              class="code-editor"
+              id="agentsEditor"
+              spellcheck="false"
+              placeholder="# Instructions de ton agent&#10;&#10;Écris en Markdown comment tu veux que ton agent se comporte…"
+            ></textarea>
+            <p class="editor-hint">
+              Ce fichier est chargé au début de chaque session. Relance le
+              moteur pour l'appliquer.
+            </p>
+          </div>
+
+          <div class="settings-panel" id="panel-agentfiles">
+            <div class="editor-bar">
+              <span class="editor-path" id="agentFilesPath"></span>
+              <div class="editor-actions">
+                <span class="editor-status" id="agentFilesStatus"></span>
+                <button class="ghost-btn" id="agentNew">Nouvel agent</button>
+              </div>
+            </div>
+            <p class="editor-hint">
+              Tes agents spécialisés. Chacun est un fichier Markdown (frontmatter
+              YAML + prompt) chargé par opencode comme subagent appelable par son
+              nom. Relance le moteur pour les rendre disponibles.
+            </p>
+            <div class="agent-cards" id="agentCards"></div>
+            <div class="agent-editor-wrap" id="agentEditorWrap" hidden>
+              <div class="editor-bar">
+                <span class="editor-path" id="agentEditName"></span>
+                <div class="editor-actions">
+                  <button class="ghost-btn" id="agentCancel">Annuler</button>
+                  <button class="danger-btn" id="agentDelete">Supprimer</button>
+                  <button class="btn-primary" id="agentSave">Enregistrer</button>
+                </div>
+              </div>
+              <textarea class="code-editor" id="agentEditor" spellcheck="false"
+                placeholder="---&#10;description: Ce que fait cet agent&#10;mode: subagent&#10;---&#10;&#10;Tu es…"></textarea>
+            </div>
+          </div>
+
+          <div class="settings-panel" id="panel-mcp">
+            <div class="editor-bar">
+              <span class="editor-path" id="mcpPath"></span>
+              <div class="editor-actions">
+                <span class="editor-status" id="mcpStatus"></span>
+                <button class="ghost-btn" id="mcpReload">Recharger</button>
+                <button class="btn-primary" id="mcpSave">Enregistrer</button>
+              </div>
+            </div>
+            <p class="editor-hint">
+              Objet JSON des serveurs MCP (même forme que la clé
+              <code>"mcp"</code> d'opencode.json). Les secrets sont masqués —
+              laisse les points pour garder une valeur existante. Relance le
+              moteur pour les connecter.
+            </p>
+            <div class="mcp-cards" id="mcpCards"></div>
+            <details class="mcp-raw">
+              <summary>Avancé : éditer le JSON brut</summary>
+              <textarea
+                class="code-editor code-editor--json"
+                id="mcpEditor"
+                spellcheck="false"
+                placeholder='{ "mon-serveur": { "type": "remote", "url": "https://...", "enabled": true } }'
+              ></textarea>
+            </details>
+          </div>
+        </section>
       </main>
     </div>
 
@@ -378,6 +492,10 @@
       <button class="tab" data-view="system">
         <span class="nav-ico" data-ico="cpu"></span>
         <span class="tab-label">Infra</span>
+      </button>
+      <button class="tab" data-view="settings">
+        <span class="nav-ico" data-ico="sliders"></span>
+        <span class="tab-label">Réglages</span>
       </button>
     </nav>
 
