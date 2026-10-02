@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """mav_api — backend du dashboard Mav.
 
-Petit serveur HTTP (stdlib) qui expose en lecture l'état réel de l'agent
-(jobs, mémoire Postgres, veille, agents, santé, métriques) et un chat qui
-passe par une session opencode dédiée au dashboard, avec streaming SSE.
+Small HTTP server (stdlib) that exposes the agent's real state read-only
+(jobs, Postgres memory, watch, agents, health, metrics) plus a chat that
+goes through a dashboard-dedicated opencode session, with SSE streaming.
 
-Aucune authentification : destiné à une VM privée, joignable via VPN.
+No authentication: meant for a private host, reachable over VPN.
 """
 
 from __future__ import annotations
@@ -45,11 +45,12 @@ PG_DSN = os.environ.get(
     "PG_DSN", "host=127.0.0.1 port=5432 user=mav password=mav_secret dbname=mav"
 )
 DEFAULT_AGENT = os.environ.get("MAV_DASH_AGENT", "").strip()
-DEFAULT_MODEL = os.environ.get("OPENCODE_MODEL", "ollama-cloud/deepseek-v4.1-flash").strip()
-# Chat id utilisé pour rattacher les nouvelles surveillances au bot Telegram.
-DEFAULT_CHAT_ID = int(os.environ.get("MAV_CHAT_ID", "7674111325"))
+DEFAULT_MODEL = os.environ.get("OPENCODE_MODEL", "").strip()
+# Chat id used to attach new watch items to the Telegram bot.
+# 0 by default: the installer sets the real value via MAV_CHAT_ID.
+DEFAULT_CHAT_ID = int(os.environ.get("MAV_CHAT_ID", "0") or 0)
 
-# Agents proposés dans le sélecteur du dashboard.
+# Agents offered in the dashboard selector.
 PRIMARY_AGENTS = ["general", "dev", "finance", "ops", "research", "reviewer", "writer"]
 
 # ------------------------------------------------------------------- helpers
@@ -110,20 +111,10 @@ def write_json(path: Path, data) -> None:
     tmp = Path(path).with_suffix(".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1))
     tmp.replace(path)
-    # Ce fichier est partagé avec le bot (utilisateur « opencode »), qui tourne
-    # sous un autre compte. Le dashboard est en root : on lui rend la propriété
-    # pour que le bot puisse aussi écrire dedans (nettoyage des abonnements).
-    try:
-        if path.name == "push_subs.json":
-            import grp
-            import pwd
-
-            uid = pwd.getpwnam("opencode").pw_uid
-            gid = grp.getgrnam("opencode").gr_gid
-            os.chown(path, uid, gid)
-            os.chmod(path, 0o664)
-    except Exception:
-        pass
+    # This file may be shared with the bot (running under another account).
+    # The dashboard often runs as root: give ownership back so both can write.
+    if path.name == "push_subs.json":
+        _chown_user(path)
 
 
 def sys_metrics() -> dict:
@@ -185,7 +176,7 @@ def cpu_pct() -> int | None:
 
 def _opencode_config_path() -> Path:
     """Localise la config opencode quel que soit l'utilisateur qui lance le service
-    (le service tourne en root, dont le HOME n'est pas /home/opencode)."""
+    (the service may run as root, whose HOME differs)."""
     env = os.environ.get("OPENCODE_CONFIG")
     if env:
         try:
@@ -193,8 +184,11 @@ def _opencode_config_path() -> Path:
                 return Path(env)
         except OSError:
             pass
-    candidates = [
-        Path("/home/opencode/.config/opencode/opencode.json"),
+    home = os.environ.get("MAV_USER_HOME") or os.environ.get("BOT_HOME")
+    candidates = []
+    if home:
+        candidates.append(Path(home) / ".config/opencode/opencode.json")
+    candidates += [
         Path.home() / ".config/opencode/opencode.json",
         Path(os.path.expanduser("~")) / ".config/opencode/opencode.json",
     ]
@@ -207,17 +201,19 @@ def _opencode_config_path() -> Path:
     return candidates[0]
 
 
-# --------------------------------------------------------------- config agent
-# Permet à l'utilisateur d'éditer son AGENTS.md et ses serveurs MCP depuis le
-# dashboard, puis de relancer le moteur pour appliquer.
+# ------------------------------------------------------------------- config
+# Everything needed to let the user edit their own agent (AGENTS.md) and MCP
+# servers from the dashboard, then restart the engine to apply.
 
+# The systemd unit of the engine (installer default: mav-server; older installs
+# may use opencode-server). Configurable, with auto-detection as a fallback.
 SERVER_UNIT_EXPLICIT = os.environ.get("MAV_SERVER_UNIT", "").strip()
 DEFAULT_SERVER_UNITS = ["mav-server", "opencode-server"]
 
 
 def _config_dir() -> Path:
-    # Si OPENCODE_CONFIG pointe un fichier, le dossier de config est son parent
-    # — même si le fichier n'existe pas encore.
+    # If OPENCODE_CONFIG points to a file, the config dir is its parent — even
+    # if the file does not exist yet.
     env = os.environ.get("OPENCODE_CONFIG")
     if env:
         return Path(env).parent
@@ -225,6 +221,7 @@ def _config_dir() -> Path:
 
 
 def agents_path() -> Path:
+    """Global AGENTS.md read by opencode (same dir as opencode.json)."""
     env = os.environ.get("MAV_AGENTS_MD")
     if env:
         return Path(env)
@@ -242,6 +239,7 @@ def _run(cmd: list[str], timeout: float = 20) -> tuple[int, str]:
 
 
 def server_unit() -> str:
+    """Name of the systemd unit running the opencode engine."""
     if SERVER_UNIT_EXPLICIT:
         return SERVER_UNIT_EXPLICIT
     for u in DEFAULT_SERVER_UNITS:
@@ -256,6 +254,37 @@ def _unit_active(unit: str) -> bool:
     return out.strip() == "active"
 
 
+def engine_status() -> dict:
+    """Live status of the agent engine + the services around it."""
+    unit = server_unit()
+    active = _unit_active(unit)
+    health = {}
+    try:
+        health = http_json(f"{OPENCODE_URL}/global/health", timeout=4) or {}
+    except Exception:
+        health = {}
+    online = bool(health.get("healthy"))
+    # How many agents/MCP the engine currently knows about.
+    n_agents = len(valid_agents())
+    n_mcp = 0
+    try:
+        names = _engine_mcp_names()
+        n_mcp = len(names)
+    except Exception:
+        n_mcp = 0
+    return {
+        "unit": unit,
+        "active": active,
+        "online": online,
+        "version": health.get("version"),
+        "agents": n_agents,
+        "mcp": n_mcp,
+        "model": DEFAULT_MODEL,
+        "url": OPENCODE_URL,
+        "checked": int(time.time()),
+    }
+
+
 def _engine_mcp_names() -> list[str]:
     try:
         data = http_json(f"{OPENCODE_URL}/mcp", timeout=6)
@@ -268,35 +297,11 @@ def _engine_mcp_names() -> list[str]:
     return []
 
 
-def engine_status() -> dict:
-    unit = server_unit()
-    active = _unit_active(unit)
-    try:
-        health = http_json(f"{OPENCODE_URL}/global/health", timeout=4) or {}
-    except Exception:
-        health = {}
-    online = bool(health.get("healthy"))
-    try:
-        n_mcp = len(_engine_mcp_names())
-    except Exception:
-        n_mcp = 0
-    return {
-        "unit": unit,
-        "active": active,
-        "online": online,
-        "version": health.get("version"),
-        "agents": len(valid_agents()),
-        "mcp": n_mcp,
-        "model": DEFAULT_MODEL,
-        "url": OPENCODE_URL,
-        "checked": int(time.time()),
-    }
-
-
 SECRET_HINTS = ("token", "key", "secret", "password", "authorization", "auth")
 
 
 def _mask_secrets(obj):
+    """Recursively mask values whose key looks like a secret, for display."""
     if isinstance(obj, dict):
         out = {}
         for k, v in obj.items():
@@ -311,22 +316,30 @@ def _mask_secrets(obj):
 
 
 def _merge_secrets(new_obj, old_obj):
+    """Keep the old secret when the client sent the masked placeholder back."""
     if isinstance(new_obj, dict) and isinstance(old_obj, dict):
         out = {}
         for k, v in new_obj.items():
-            if isinstance(v, str) and v == "••••••••" and isinstance(old_obj.get(k), str):
+            if (
+                isinstance(v, str)
+                and v == "••••••••"
+                and isinstance(old_obj.get(k), str)
+            ):
                 out[k] = old_obj[k]
             else:
                 out[k] = _merge_secrets(v, old_obj.get(k))
         return out
     if isinstance(new_obj, list) and isinstance(old_obj, list):
-        return [_merge_secrets(v, old_obj[i] if i < len(old_obj) else None) for i, v in enumerate(new_obj)]
+        return [
+            _merge_secrets(v, old_obj[i] if i < len(old_obj) else None)
+            for i, v in enumerate(new_obj)
+        ]
     return new_obj
 
 
 def _chown_user(path: Path) -> None:
-    """Redonne le fichier à l'utilisateur d'installation (le moteur tourne sous
-    ce compte, le dashboard peut tourner en root)."""
+    """Give the file back to the install user (the engine runs as that user,
+    the dashboard may run as root)."""
     try:
         import grp  # noqa: PLC0415
         import pwd  # noqa: PLC0415
@@ -337,6 +350,8 @@ def _chown_user(path: Path) -> None:
         if not user and home and Path(home).exists():
             uid = os.stat(home).st_uid
         elif not user:
+            # Infer from the existing file, else its directory, else the
+            # bot data dir (whose owner is the install user).
             for cand in (
                 Path(os.environ.get("BOT_DIR", "")),
                 path.parent,
@@ -357,7 +372,9 @@ def _chown_user(path: Path) -> None:
         else:
             return
         os.chown(path, uid, gid)
-        os.chmod(path, 0o664)
+        # Only tighten files; never strip the execute bit from a directory.
+        if path.is_file():
+            os.chmod(path, 0o664)
     except Exception:
         pass
 
@@ -377,6 +394,7 @@ def write_agents(text: str) -> dict:
     p = agents_path()
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
+        # Back up the previous version (keep a couple of them).
         if p.is_file():
             try:
                 bak = p.with_suffix(".md.bak")
@@ -392,6 +410,7 @@ def write_agents(text: str) -> dict:
 
 
 def read_mcp() -> dict:
+    """MCP servers from the opencode config, secrets masked."""
     p = _opencode_config_path()
     try:
         cfg = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
@@ -507,29 +526,26 @@ def write_mcp(mcp: dict) -> dict:
 
 
 def restart_engine() -> dict:
+    """Restart the engine without blocking: issue the restart and return
+    immediately. The caller polls /api/config/engine until it is back.
+
+    `systemctl` alone can take minutes because the bot holds a long-lived SSE
+    connection, so the graceful stop waits. `--no-block` returns at once."""
     unit = server_unit()
-    code, out = _run(["systemctl", "restart", unit], timeout=45)
+    code, out = _run(["systemctl", "restart", "--no-block", unit], timeout=15)
     if code != 0:
         return {"ok": False, "error": out.strip(), "unit": unit}
-    deadline = time.time() + 20
-    while time.time() < deadline:
-        time.sleep(1)
-        try:
-            h = http_json(f"{OPENCODE_URL}/global/health", timeout=3)
-            if h and h.get("healthy"):
-                _agents_cache["at"] = 0.0
-                return {"ok": True, "unit": unit, **engine_status()}
-        except Exception:
-            continue
-    return {"ok": True, "unit": unit, "slow": True, **engine_status()}
+    return {"ok": True, "restarting": True, "unit": unit}
 
 
 def config_snapshot() -> dict:
+    """Everything the settings screen shows at once."""
+    cfg = _opencode_config_path()
     return {
         "agents": read_agents(),
         "mcp": read_mcp(),
         "engine": engine_status(),
-        "config_path": str(_opencode_config_path()),
+        "config_path": str(cfg),
         "model": DEFAULT_MODEL,
         "url": OPENCODE_URL,
     }
@@ -654,12 +670,12 @@ Rules:
 
 
 def _proxmox_conf() -> dict:
-    """Récupère les accès Proxmox depuis la config opencode, sans les exposer."""
+    """Read Proxmox credentials from the opencode config, without exposing them."""
     try:
         cfg = json.loads(_opencode_config_path().read_text())
         env = cfg.get("mcp", {}).get("proxmox", {}).get("environment", {})
         return {
-            "host": env.get("PROXMOX_HOST", "192.168.1.28"),
+            "host": env.get("PROXMOX_HOST", ""),
             "user": env.get("PROXMOX_USER", "root@pam"),
             "token_name": env.get("PROXMOX_TOKEN_NAME", "mcp"),
             "token": env.get("PROXMOX_TOKEN_VALUE", ""),
@@ -783,14 +799,14 @@ def get_connections() -> list[dict]:
         conns.append({"name": "Moteur opencode", "state": "off", "label": "hors ligne"})
     try:
         pg_query("select 1")
-        conns.append({"name": "Base mémoire", "state": "ok", "label": "connectée"})
+        conns.append({"name": "Memory store", "state": "ok", "label": "connected"})
     except Exception:
-        conns.append({"name": "Base mémoire", "state": "off", "label": "hors ligne"})
+        conns.append({"name": "Memory store", "state": "off", "label": "offline"})
     docker_ok = Path("/var/run/docker.sock").exists()
-    conns.append({"name": "Docker", "state": "ok" if docker_ok else "warn", "label": "présent" if docker_ok else "inconnu"})
+    conns.append({"name": "Docker", "state": "ok" if docker_ok else "warn", "label": "present" if docker_ok else "unknown"})
     conns.append({"name": "Telegram", "state": "ok", "label": "pont actif"})
     px = get_proxmox()
-    conns.append({"name": "Proxmox", "state": "ok" if px.get("available") else "warn", "label": "connecté" if px.get("available") else "indisponible"})
+    conns.append({"name": "Proxmox", "state": "ok" if px.get("available") else "warn", "label": "connected" if px.get("available") else "unavailable"})
     return conns
 
 
@@ -830,10 +846,10 @@ JOB_PREFIX = "job-"
 
 
 def get_job_results(limit: int = 8) -> dict:
-    """Derniers résultats produits par les jobs planifiés.
+    """Latest results produced by scheduled jobs.
 
     Le bot lance chaque job dans une session « job-<nom> » (distincte du
-    dashboard et de Telegram). On lit la réponse assistant la plus récente
+    dashboard and Telegram). We read the most recent assistant answer
     de ces sessions pour l'afficher sur l'accueil.
     """
     try:
@@ -924,7 +940,7 @@ def get_notifications(limit: int = 30) -> dict:
 
 
 def get_notification(nid: int) -> dict:
-    """Une notification par id (pour ouvrir son détail depuis le push)."""
+    """One notification by id (to open its detail from the push)."""
     try:
         rows = pg_query(
             "select id, ts, topic, title, body, delivered from notifications where id = %s",
@@ -954,7 +970,7 @@ def watch_remove(item_id: int) -> bool:
 
 
 def get_agents() -> dict:
-    # Agents internes qu'on ne propose pas dans le sélecteur.
+    # Internal agents we do not offer in the selector.
     hidden = {"compaction", "title", "summary", "plan", "build"}
     try:
         agents = http_json(f"{OPENCODE_URL}/agent", timeout=6) or []
@@ -1012,7 +1028,7 @@ def global_search(query: str) -> dict:
 
 # ------------------------------------------------------------------- markets
 
-# Indices/symboles proposés par défaut dans le dashboard.
+# Default indices/symbols offered in the dashboard.
 MARKET_SYMBOLS = [
     "SPY", "QQQ", "DIA", "IWM", "GLD", "SLV", "USO", "TLT", "VIX",
     "NVDA", "AAPL", "MSFT", "TSLA", "BTC-USD", "ETH-USD",
@@ -1085,7 +1101,7 @@ def get_quotes(symbols: list[str]) -> dict:
 
 
 def get_chart(symbol: str, range_: str = "1mo", interval: str = "1d") -> dict:
-    """Séries OHLC + volumes pour un graphique (Yahoo Finance)."""
+    """OHLC series + volume for a chart (Yahoo Finance)."""
     sym = symbol.strip().upper()
     allowed_ranges = {"1d": ("5m", "1d"), "5d": ("30m", "5d"), "1mo": ("1d", "1mo"),
                       "3mo": ("1d", "3mo"), "6mo": ("1d", "6mo"), "1y": ("1d", "1y"),
@@ -1153,7 +1169,7 @@ def _migrate_legacy() -> None:
     for s in _list_raw_sessions():
         if s.get("title") == "dashboard":
             try:
-                http_json(f"{OPENCODE_URL}/session/{s['id']}", method="PATCH", body={"title": PREFIX + "Première discussion"})
+                http_json(f"{OPENCODE_URL}/session/{s['id']}", method="PATCH", body={"title": PREFIX + "First conversation"})
             except Exception:
                 pass
 
@@ -1165,7 +1181,7 @@ def list_sessions() -> list[dict]:
         title = str(s.get("title", ""))
         if not title.startswith(PREFIX):
             continue
-        # Les lancements de job créent « dash: job: <nom> » : ce ne sont pas des
+        # Job runs create "dash: job: <name>": these are not
         # discussions, on ne les met pas dans la liste.
         if title[len(PREFIX):].startswith("job:"):
             continue
@@ -1296,7 +1312,7 @@ def save_upload(name: str, data_b64: str, mime: str = "") -> dict:
     mt = mime or mimetypes.guess_type(safe)[0] or "application/octet-stream"
     if mt == "application/octet-stream":
         mt = _mime_from_ext(safe)
-    # Archive persistante : les pièces jointes envoyées par Raphaël restent
+    # Persistent archive: attachments sent by the user remain
     # disponibles pour que Mav puisse les renvoyer plus tard.
     archived = archive_media(dest, safe, mt, source="upload")
     return {
@@ -1309,9 +1325,9 @@ def save_upload(name: str, data_b64: str, mime: str = "") -> dict:
 
 
 # --------------------------------------------------------------- media
-# Dossier média PERSISTANT (survit aux reboots, contrairement à /tmp) + index
-# JSON. Sert à : (1) archiver les pièces jointes reçues, (2) garder les images
-# générées, (3) permettre à Mav de renvoyer n'importe quel fichier par son id.
+# PERSISTENT media folder (survives reboots, unlike /tmp) + JSON index.
+# Used to: (1) archive received attachments, (2) keep generated images,
+# (3) let Mav resend any file by its id.
 MEDIA_DIR = Path(os.environ.get("MAV_MEDIA", BOT_DIR / "mav-media"))
 MEDIA_INDEX = MEDIA_DIR / "index.json"
 
@@ -1335,7 +1351,7 @@ def _media_save(items: list) -> None:
 
 
 def archive_media(src: Path, name: str, mime: str, source: str = "", size: int = 0, mtime: int = 0) -> dict | None:
-    """Copie un fichier dans le dossier média persistant et l'indexe."""
+    """Copy a file into the persistent media folder and index it."""
     try:
         MEDIA_DIR.mkdir(parents=True, exist_ok=True)
         safe = re.sub(r"[^A-Za-z0-9._-]", "_", name or "fichier")[:120] or "fichier"
@@ -1375,7 +1391,7 @@ def list_media(limit: int = 60) -> dict:
 
 
 def find_media(query: str) -> list:
-    """Retrouve des médias par nom (insensible à la casse)."""
+    """Find media by name (case-insensitive)."""
     q = (query or "").strip().lower()
     if not q:
         return []
@@ -1386,14 +1402,14 @@ def find_media(query: str) -> list:
 
 
 def sync_media_dir() -> int:
-    """Archive les images présentes dans /tmp/mav-dashboard qui n'y sont pas
-    déjà. Appelée avant l'affichage d'un média, pour que toute image générée
-    (capture Puppeteer, graphe…) soit persistée automatiquement."""
+    """Archive images present in /tmp/mav-dashboard that are not archived
+    yet. Called before displaying media, so any generated image
+    (Puppeteer screenshot, chart…) is persisted automatically."""
     src_dir = Path("/tmp/mav-dashboard")
     if not src_dir.is_dir():
         return 0
-    # Dédoublonnage par (nom, taille, mtime) : un même fichier n'est archivé
-    # qu'une fois, même si son nom reste identique entre deux générations.
+    # Dedup by (name, size, mtime): the same file is archived only
+    # once, even if its name stays identical across generations.
     items = _media_load()
     known = {(i.get("name"), i.get("size"), i.get("mtime")) for i in items}
     added = 0
@@ -1417,23 +1433,29 @@ def sync_media_dir() -> int:
 
 
 # --------------------------------------------------------------- assets
-# Permet à Mav de renvoyer des images dans le chat. On sert un fichier image
+# Lets Mav send images in the chat. We serve an image file
 # local via /api/asset?path=..., en n'autorisant que des images et une liste
 # de racines, pour ne jamais exposer un fichier arbitraire.
 ASSET_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif"}
-ASSET_ROOTS = [
-    MEDIA_DIR,
-    ATTACH_DIR,
-    Path("/tmp/mav-dashboard"),
-    Path("/tmp/opencode"),
-    Path(BOT_DIR).resolve() if BOT_DIR.exists() else Path("/home/opencode/bot"),
-    Path("/home/opencode/workspace"),
-    Path("/home/opencode/Downloads"),
-]
+
+
+def _asset_roots() -> list[Path]:
+    roots = [MEDIA_DIR, ATTACH_DIR, Path("/tmp/mav-dashboard"), Path("/tmp/opencode")]
+    if BOT_DIR.exists():
+        roots.append(Path(BOT_DIR).resolve())
+    # Optional roots, specific to the user's installation.
+    for env in ("MAV_USER_HOME", "BOT_HOME"):
+        home = os.environ.get(env)
+        if home and Path(home).is_dir():
+            roots += [Path(home) / "workspace", Path(home) / "Downloads"]
+    return roots
+
+
+ASSET_ROOTS = _asset_roots()
 
 
 def serve_asset(path: str):
-    """Retourne (bytes, mime) si le chemin est une image autorisée, sinon None."""
+    """Return (bytes, mime) if the path is an allowed image, else None."""
     if not path:
         return None
     raw = urllib.parse.unquote(str(path))
@@ -1464,7 +1486,7 @@ def serve_asset(path: str):
 
 
 # Le moteur refuse application/octet-stream : on devine un type utile depuis
-# l'extension, pour les cas où le navigateur n'annonce rien (fichiers locaux).
+# the extension, for cases where the browser announces nothing (local files).
 _EXT_MIME = {
     ".txt": "text/plain",
     ".md": "text/markdown",
@@ -1495,7 +1517,7 @@ def _mime_from_ext(name: str) -> str:
 
 
 def _guess_file(item: dict) -> dict:
-    """Complète une pièce jointe (mime/nom) à partir de son URL locale."""
+    """Fill in an attachment (mime/name) from its local URL."""
     url = item.get("url") or ""
     path = url[len("file://"):] if url.startswith("file://") else url
     name = item.get("filename") or Path(path).name
@@ -1527,7 +1549,7 @@ _agents_cache: dict = {"at": 0.0, "names": set()}
 
 
 def valid_agents() -> set:
-    """Noms d'agents réellement reconnus par le moteur (cache 60 s)."""
+    """Agent names actually recognized by the engine (60 s cache)."""
     now = time.time()
     if now - _agents_cache["at"] < 60 and _agents_cache["names"]:
         return _agents_cache["names"]
@@ -1547,12 +1569,12 @@ def valid_agents() -> set:
 
 
 def stream_answer(prompt: str, sid: str, agent: str = "", files: list | None = None):
-    """Réponse en SSE, collectée côté serveur : fiable et sans raisonnement.
+    """SSE answer, collected server-side: reliable and reasoning-free.
 
-    On laisse le moteur exécuter la demande, puis on interroge les messages de
-    la session jusqu'à obtenir un message assistant terminé. Seules les parts
-    de type « text » sont envoyées : les étapes d'outils et le raisonnement
-    interne n'apparaissent jamais. La fin est détectée sur le champ `finish`
+    We let the engine run the request, then poll the session messages until
+    we get a finished assistant message. Only "text" parts are sent: tool
+    steps and internal reasoning never appear. The end is detected on the
+    `finish` field
     du message, pas sur un signal de flux qui peut se perdre.
     """
     sid = ensure_session(sid, agent)
@@ -1570,8 +1592,8 @@ def stream_answer(prompt: str, sid: str, agent: str = "", files: list | None = N
         body["agent"] = ag
     body.update(_model_body())
 
-    # Auto-titre : la première fois qu'on écrit dans une discussion encore
-    # nommée par défaut, son titre devient le début du message.
+    # Auto-title: the first time we write into a conversation still
+    # named by default, its title becomes the start of the message.
     try:
         if prompt.strip():
             current = session_title(sid)[len(PREFIX):]
@@ -1583,7 +1605,7 @@ def stream_answer(prompt: str, sid: str, agent: str = "", files: list | None = N
     except Exception:
         pass
 
-    # Marqueur de départ : tout message antérieur à notre prompt est ignoré.
+    # Start marker: any message older than our prompt is ignored.
     try:
         before = http_json(f"{OPENCODE_URL}/session/{sid}/message", timeout=12) or []
     except Exception:
@@ -1599,7 +1621,7 @@ def stream_answer(prompt: str, sid: str, agent: str = "", files: list | None = N
     yield sse("start", {"session": sid})
 
     deadline = time.time() + 900      # garde-fou global (15 min)
-    idle_limit = 240                  # sans progression réelle (4 min)
+    idle_limit = 240                  # no real progress (4 min)
     last_progress = time.time()
     last_sig = None
     last_text = ""
@@ -1626,13 +1648,13 @@ def stream_answer(prompt: str, sid: str, agent: str = "", files: list | None = N
             continue
         accepted = True
 
-        # Réponse visible uniquement : parts de type « text », jamais le reasoning.
+        # Visible answer only: "text" parts, never reasoning.
         text = "\n\n".join(_part_text(e.get("parts") or []) for e in new_assistant).strip()
 
         last = new_assistant[-1]
         linfo = last.get("info") or {}
-        # Signature de progression : nombre de messages, état de fin, longueur de
-        # la réponse visible, et état des outils en cours (running/completed).
+        # Progress signature: message count, finish state, visible answer
+        # length, and current tool state (running/completed).
         tool_sig = tuple(
             (p.get("id"), (p.get("state") or {}).get("status"))
             for e in new_assistant
@@ -1659,17 +1681,17 @@ def stream_answer(prompt: str, sid: str, agent: str = "", files: list | None = N
 
         last_has_text = bool(_part_text(last.get("parts") or []))
         finish = linfo.get("finish")
-        # « tool-calls » = le modèle enchaîne sur des outils ; « None » = en cours.
-        # Tout autre finish (« stop », « length », « error »…) est terminal.
+        # "tool-calls" = the model continues with tools; "None" = in progress.
+        # Any other finish ("stop", "length", "error"…) is terminal.
         if finish is not None and finish != "tool-calls":
             finished_text = text or last_text
             break
-        # Erreur terminale sans réponse exploitable.
+        # Terminal error with no usable answer.
         if engine_error and finish is not None and not last_has_text:
             break
 
     if not accepted and not finished_text:
-        yield sse("error", {"message": "La demande n'a pas pu être lancée.", "session": sid})
+        yield sse("error", {"message": "The request could not be started.", "session": sid})
         return
     if engine_error and not finished_text:
         yield sse("error", {"message": str(engine_error), "session": sid})
@@ -1707,7 +1729,7 @@ _vapid_lock = threading.Lock()
 
 
 def _vapid_keys() -> tuple[str, str]:
-    """Retourne (clé_privée_pem, clé_publique_b64url). Les crée au besoin."""
+    """Return (private_key_pem, public_key_b64url). Create them on demand."""
     key_file = BOT_DIR / "vapid_private.pem"
     pub_file = BOT_DIR / "vapid_public.txt"
     if key_file.exists() and pub_file.exists():
@@ -1783,7 +1805,7 @@ def send_push(title: str, body: str, url: str = "./") -> int:
                 subscription_info=s,
                 data=payload,
                 vapid_private_key=vapid,
-                vapid_claims={"sub": "mailto:raphael.girard.tech@gmail.com"},
+                vapid_claims={"sub": os.environ.get("MAV_VAPID_SUB") or "mailto:admin@localhost"},
                 ttl=86400,
                 headers={"Urgency": "high"},
                 timeout=15,
@@ -1793,31 +1815,31 @@ def send_push(title: str, body: str, url: str = "./") -> int:
         except WebPushException as exc:
             code = getattr(getattr(exc, "response", None), "status_code", None)
             if code in (404, 410):
-                pass  # abonnement définitivement expiré : on le retire
+                pass  # subscription permanently expired: drop it
             else:
-                alive.append(s)  # erreur transitoire : on garde l'abonné
+                alive.append(s)  # transient error: keep the subscriber
         except Exception:
             alive.append(s)
     write_json(PUSH_FILE, alive)
     return sent
 
 
-# La veille et la poussée des notifications sont désormais gérées par le bot
-# Telegram (`~/bot/ocnotify.py` + `ocwatch.py`), avec dédup et heures calmes.
-# Le dashboard ne fait que fournir les clés VAPID, stocker les abonnements et
-# exposer l'historique (`/api/notifications`).
+# Watch and notification pushing are now handled by the Telegram bot
+# (`~/bot/ocnotify.py` + `ocwatch.py`), with dedup and quiet hours.
+# The dashboard only provides VAPID keys, stores subscriptions and
+# exposes the history (`/api/notifications`).
 
 
 # ------------------------------------------------------------------- server
 
 
 class ThreadedHTTPServer(ThreadingHTTPServer):
-    """Serveur HTTP/1.1 avec keep-alive et file d'attente d'écoute large.
+    """HTTP/1.1 server with keep-alive and a large listen backlog.
 
-    Par défaut, http.server reste en HTTP/1.0 (une connexion par requête) et
-    n'accepte que 5 connexions en attente — au chargement à froid, un
-    navigateur ouvre plusieurs connexions en parallèle et peut se faire
-    refuser/timer. On active donc le keep-alive et on élargit le backlog.
+    By default http.server stays on HTTP/1.0 (one connection per request) and
+    accepts only 5 pending connections — on a cold load, a browser opens
+    several in parallel and can get refused/timed out. So we enable keep-alive
+    and widen the backlog.
     """
 
     daemon_threads = True
@@ -2024,7 +2046,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"ok": True})
             if path == "/api/session/summary":
                 sid = payload.get("id", "")
-                s = ask("Résume cette conversation en quelques points clés, en français.", "summary", sid)
+                s = ask("Summarize this conversation in a few key points.", "summary", sid)
                 return self._send(200, {"summary": s})
             if path == "/api/job/toggle":
                 ok = set_job_enabled(payload.get("name", ""), bool(payload.get("enabled")))
@@ -2046,7 +2068,7 @@ class Handler(BaseHTTPRequestHandler):
                 f = save_upload(payload.get("name", "fichier"), payload.get("data", ""), payload.get("mime", ""))
                 return self._send(200, f)
             if path == "/api/push/subscribe":
-                # On mémorise l'appareil pour diagnostiquer (headless vs vrai tel).
+                # Record the device for diagnostics (headless vs real phone).
                 try:
                     payload["_ua"] = self.headers.get("User-Agent", "")[:200]
                 except Exception:
@@ -2060,8 +2082,8 @@ class Handler(BaseHTTPRequestHandler):
                 n = send_push("Mav", "Ceci est une notification de test.")
                 return self._send(200, {"sent": n})
             if path == "/api/push/ack":
-                # Accusé de réception du service worker : prouve que le push est
-                # bien arrivé sur l'appareil (diagnostic de livraison).
+                # Service worker acknowledgement: proves the push actually
+                # reached the device (delivery diagnostics).
                 try:
                     pg_exec(
                         "insert into notifications (ts, chat_id, topic, title, body, channels, delivered) "
@@ -2087,7 +2109,10 @@ class Handler(BaseHTTPRequestHandler):
                 res = restart_engine()
                 return self._send(200, res)
             if path == "/api/config/agent-file":
-                res = write_agent_file((payload.get("name") or "").strip(), payload.get("text", ""))
+                res = write_agent_file(
+                    (payload.get("name") or "").strip(),
+                    payload.get("text", ""),
+                )
                 return self._send(200 if res.get("ok") else 400, res)
             if path == "/api/config/agent-file/delete":
                 res = delete_agent_file((payload.get("name") or "").strip())
@@ -2127,7 +2152,7 @@ def main():
     import ssl
 
     srv = ThreadedHTTPServer((BIND, PORT), Handler)
-    print(f"mav-api en écoute sur http://{BIND}:{PORT} (statique: {STATIC_DIR})", flush=True)
+    print(f"mav-api listening on http://{BIND}:{PORT} (static: {STATIC_DIR})", flush=True)
 
     if TLS_PORT and TLS_CERT and TLS_KEY:
         try:
@@ -2136,7 +2161,7 @@ def main():
             ctx.load_cert_chain(TLS_CERT, TLS_KEY)
             tsrv.socket = ctx.wrap_socket(tsrv.socket, server_side=True)
             threading.Thread(target=tsrv.serve_forever, daemon=True).start()
-            print(f"mav-api en écoute sur https://{BIND}:{TLS_PORT}", flush=True)
+            print(f"mav-api listening on https://{BIND}:{TLS_PORT}", flush=True)
         except Exception as exc:  # noqa: BLE001
             print(f"TLS indisponible: {exc}", flush=True)
 

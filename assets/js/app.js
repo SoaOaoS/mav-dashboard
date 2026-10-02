@@ -1,14 +1,14 @@
 /* ============================================================
    Mav — companion UI
-   Mode LIVE : API réelle (/api/*) servie par mav_api.py, avec streaming SSE.
-   Fallback MOCK automatique si l'API n'est pas joignable (GitHub Pages).
+   LIVE mode: real API (/api/*) served by mav_api.py, with SSE streaming.
+   Automatic MOCK fallback if the API is unreachable (GitHub Pages).
    ============================================================ */
 
-/* ---------- Données de secours (mock) ---------- */
+/* ---------- Fallback data (mock) ---------- */
 const MOCK = {
   connections: [
     { name: "Moteur opencode", state: "ok", label: "en ligne" },
-    { name: "Base mémoire", state: "ok", label: "connectée" },
+    { name: "Memory store", state: "ok", label: "connected" },
     { name: "Telegram", state: "ok", label: "pont actif" },
   ],
   jobs: [
@@ -21,8 +21,8 @@ const MOCK = {
       enabled: true,
     },
     {
-      name: "Point marchés",
-      description: "Synthèse macro et marchés.",
+      name: "Market recap",
+      description: "Macro and markets summary.",
       time: "09:00",
       days: ["mon", "tue", "wed", "thu", "fri"],
       agent: "research",
@@ -33,18 +33,18 @@ const MOCK = {
     {
       name: "point-marche",
       updated: 0,
-      text: "Ouverture européenne prudente, indices +0,3 %. Or à 2 640 $/oz, pétrole stable. Synthèse : rester défensif sur les taux.",
+      text: "Cautious European open, indices +0.3%. Gold at $2,640/oz, oil steady. Takeaway: stay defensive on rates.",
     },
     {
       name: "revue-matin",
       updated: 0,
-      text: "2 PRs ouvertes à relire, CI verte, aucune dépendance vulnérable critique.",
+      text: "2 open PRs to review, CI green, no critical vulnerable dependency.",
     },
   ],
-  agents: ["research", "dev", "finance", "ops", "writer"],
+  agents: ["general", "dev", "research", "writer"],
   today: [
-    { t: "09:00", text: "Point marchés envoyé." },
-    { t: "08:00", text: "Revue du matin terminée." },
+    { t: "09:00", text: "Daily brief sent." },
+    { t: "08:00", text: "Inbox review done." },
   ],
   memory: { conversations: [], facts: [], preferences: [] },
   watch: { items: [] },
@@ -52,44 +52,44 @@ const MOCK = {
     available: true,
     nodes: [
       {
-        name: "GAIA",
+        name: "node-1",
         status: "online",
         cpu: 7,
-        mem_pct: 12,
-        disk_used: 9460129792,
-        disk_total: 100861726720,
+        mem_pct: 34,
+        disk_used: 42000000000,
+        disk_total: 120000000000,
         uptime: 662853,
       },
     ],
     vms: [
       {
-        vmid: 113,
-        name: "OPC",
+        vmid: 101,
+        name: "app-server",
         status: "running",
         cpu: 12,
         mem: 4e9,
         maxmem: 16e9,
-        node: "GAIA",
+        node: "node-1",
       },
       {
-        vmid: 100,
-        name: "NGINX-PROXY-MANAGER",
+        vmid: 102,
+        name: "proxy",
         status: "running",
         cpu: 3,
         mem: 1e9,
         maxmem: 1e9,
-        node: "GAIA",
+        node: "node-1",
       },
     ],
     running: 2,
     total: 2,
   },
   replies: {
-    statut: "Tout va bien de mon côté.",
-    automatisations: "Voici tes automatisations.",
-    souvenirs: "Je retiens quelques choses.",
-    surveillance: "Je surveille plusieurs sources.",
-    default: ["Compris, je m'en occupe.", "Bien noté.", "D'accord."],
+    status: "Everything is fine on my side.",
+    automations: "Here are your automations.",
+    memories: "I remember a few things.",
+    watch: "I watch several sources.",
+    default: ["Got it, on it.", "Noted.", "Alright."],
   },
 };
 
@@ -113,7 +113,9 @@ const api = {
       body: JSON.stringify(body || {}),
     });
     let data = null;
-    try { data = await r.json(); } catch (_) {}
+    try {
+      data = await r.json();
+    } catch (_) {}
     if (!r.ok) {
       const msg = (data && data.error) || r.status;
       const err = new Error(msg);
@@ -190,10 +192,10 @@ tick();
 /* ---------- Salutation ---------- */
 function greet() {
   const h = new Date().getHours();
-  if (h < 6) return "Bonne nuit Raphaël";
-  if (h < 12) return "Bonjour Raphaël";
-  if (h < 18) return "Bon après-midi Raphaël";
-  return "Bonsoir Raphaël";
+  if (h < 6) return "Good night";
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
+  return "Good evening";
 }
 $("#greeting").textContent = greet();
 
@@ -217,15 +219,15 @@ $$("[data-goto]").forEach((b) =>
   b.addEventListener("click", () => go(b.dataset.goto)),
 );
 
-/* En-tête mobile : titre contextuel + actions rapides */
+/* Mobile header: contextual title + quick actions */
 const VIEW_TITLES = {
   home: "Mav",
-  chat: "Discussions",
-  jobs: "Automatisations",
-  memory: "Souvenirs",
-  watch: "Surveillance",
+  chat: "Conversations",
+  jobs: "Automations",
+  memory: "Memories",
+  watch: "Watch",
   system: "Infra",
-  settings: "Réglages",
+  settings: "Settings",
 };
 function setMobileTitle(view) {
   const t = $("#mobileTitle");
@@ -240,14 +242,14 @@ function renderStatus(st) {
   if (!st) return;
   $("#greetingSub").textContent =
     st.mode === "mock" || st.agent_online === undefined
-      ? "Aperçu de démonstration — je me connecte à l'agent quand tu m'ouvres depuis ton réseau."
+      ? "Demo preview — I connect to the agent when you open me from your network."
       : st.agent_online
-        ? "Je suis en ligne. Tout est calme de mon côté."
-        : "Mon moteur ne répond pas pour l'instant.";
+        ? "I am online. Everything is calm on my side."
+        : "My engine is not responding right now.";
 
   $("#stats").innerHTML = [
     { v: st.jobs_active ?? "—", k: "automatisations actives" },
-    { v: st.conversations ?? "—", k: "échanges en mémoire" },
+    { v: st.conversations ?? "—", k: "stored exchanges" },
     { v: st.facts ?? "—", k: "faits retenus" },
     { v: st.watch_items ?? "—", k: "surveillances" },
   ]
@@ -295,7 +297,7 @@ function renderJobResults(results) {
   if (!box) return;
   const list = results || [];
   if (!list.length) {
-    box.innerHTML = `<div class="jr-empty">Aucun résultat de job pour l'instant.</div>`;
+    box.innerHTML = `<div class="jr-empty">No job result yet.</div>`;
     return;
   }
   box.innerHTML = list
@@ -313,7 +315,7 @@ function renderJobResults(results) {
   mountCharts(box);
 }
 
-// Clic sur un résultat de job : déplie / replie l'aperçu.
+// Click a job result: expand / collapse the preview.
 $("#jobResults").addEventListener("click", (e) => {
   const item = e.target.closest("[data-jr]");
   if (item) item.classList.toggle("is-open");
@@ -343,7 +345,7 @@ function renderJobs(jobs) {
 function renderMemory(mem) {
   const rows = [];
   (mem.conversations || []).forEach((c) =>
-    rows.push({ date: fmtTime(c.ts), text: c.question, tag: "échange" }),
+    rows.push({ date: fmtTime(c.ts), text: c.question, tag: "exchange" }),
   );
   (mem.facts || []).forEach((f) =>
     rows.push({ date: fmtDate(f.ts), text: f.fact, tag: "fait" }),
@@ -352,12 +354,12 @@ function renderMemory(mem) {
     rows.push({
       date: fmtDate(p.ts),
       text: `${p.key} : ${p.value}`,
-      tag: "préférence",
+      tag: "preference",
     }),
   );
   if (!rows.length) {
     $("#memoryList").innerHTML =
-      `<li><div class="mdate"></div><div class="mtext" style="color:var(--ink-3)">Rien en mémoire pour l'instant.</div></li>`;
+      `<li><div class="mdate"></div><div class="mtext" style="color:var(--ink-3)">Nothing in memory yet.</div></li>`;
     return;
   }
   $("#memoryList").innerHTML = rows
@@ -375,7 +377,7 @@ function renderWatch(watch) {
   const items = (watch && watch.items) || [];
   if (!items.length) {
     $("#watchList").innerHTML =
-      `<div class="wcard"><div class="wtype">Veille</div><div class="wtarget">Aucune surveillance active</div><div class="wstate"><span class="st"></span>en veille</div></div>`;
+      `<div class="wcard"><div class="wtype">Watch</div><div class="wtarget">No active watch</div><div class="wstate"><span class="st"></span>idle</div></div>`;
     return;
   }
   $("#watchList").innerHTML = items
@@ -385,8 +387,8 @@ function renderWatch(watch) {
     <div class="wcard">
       <div class="wtype">${esc(w.kind)}</div>
       <div class="wtarget">${esc(w.target)}</div>
-      <div class="wstate ${changed ? "changed" : ""}"><span class="st"></span>${changed ? "a changé" : "stable"}${w.last_checked ? ` · ${esc(fmtTime(w.last_checked))}` : ""}</div>
-      <button class="watch-rm" data-rm="${w.id}">Retirer</button>
+      <div class="wstate ${changed ? "changed" : ""}"><span class="st"></span>${changed ? "changed" : "stable"}${w.last_checked ? ` · ${esc(fmtTime(w.last_checked))}` : ""}</div>
+      <button class="watch-rm" data-rm="${w.id}">Remove</button>
     </div>`;
     })
     .join("");
@@ -406,7 +408,7 @@ function renderInfra(px) {
       <h3>${esc(n.name)} <span class="vm-dot ${n.status === "online" ? "running" : "stopped"}"></span></h3>
       <div class="node-row"><span>CPU</span><span>${n.cpu}%</span></div>
       <div class="mini-bar"><i style="width:${Math.min(100, n.cpu)}%"></i></div>
-      <div class="node-row"><span>Mémoire</span><span>${n.mem_pct}% · ${fmtBytes(n.mem_used)}/${fmtBytes(n.mem_total)}</span></div>
+      <div class="node-row"><span>Memory</span><span>${n.mem_pct}% · ${fmtBytes(n.mem_used)}/${fmtBytes(n.mem_total)}</span></div>
       <div class="mini-bar"><i style="width:${Math.min(100, n.mem_pct)}%"></i></div>
       <div class="node-row"><span>Uptime</span><span>${fmtUptime(n.uptime)}</span></div>
     </div>`,
@@ -433,7 +435,7 @@ $("#jobsList").addEventListener("click", async (e) => {
     try {
       await api.post("job/run", { name: run.dataset.run });
       toast(
-        `Job « ${run.dataset.run} » lancé — le rapport arrivera sur Telegram.`,
+        `Job "${run.dataset.run}" started — the report will land on Telegram.`,
       );
     } catch (_) {
       toast("Échec du lancement.");
@@ -449,14 +451,14 @@ $("#jobsList").addEventListener("click", async (e) => {
       const j = await api.get("jobs");
       renderJobs(j.jobs || []);
       renderMiniJobs(j.jobs || []);
-      toast(enabled ? "Automatisation activée." : "Automatisation en pause.");
+      toast(enabled ? "Automation enabled." : "Automation paused.");
     } catch (_) {
       toast("Échec.");
     }
   }
 });
 
-/* ---------- Surveillance : ajout / retrait ---------- */
+/* ---------- Watch: add / remove ---------- */
 $("#watchForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!LIVE) return toast("Disponible sur le live uniquement.");
@@ -468,7 +470,7 @@ $("#watchForm").addEventListener("submit", async (e) => {
     $("#watchTarget").value = "";
     const w = await api.get("watch");
     renderWatch(w);
-    toast("Surveillance ajoutée.");
+    toast("Watch item added.");
   } catch (_) {
     toast("Échec de l'ajout.");
   }
@@ -479,11 +481,11 @@ $("#watchList").addEventListener("click", async (e) => {
   try {
     await api.post("watch/remove", { id: Number(rm.dataset.rm) });
     renderWatch(await api.get("watch"));
-    toast("Surveillance retirée.");
+    toast("Watch item removed.");
   } catch (_) {}
 });
 
-/* ---------- Recherche (mémoire) ---------- */
+/* ---------- Search (memory) ---------- */
 let searchTimer = null;
 $("#memorySearch").addEventListener("input", (e) => {
   const q = e.target.value.trim();
@@ -507,7 +509,7 @@ function renderSearchResults(r) {
     }),
   );
   (r.conversations || []).forEach((c) =>
-    rows.push({ date: fmtTime(c.ts), text: c.question, tag: "échange" }),
+    rows.push({ date: fmtTime(c.ts), text: c.question, tag: "exchange" }),
   );
   (r.facts || []).forEach((f) =>
     rows.push({ date: fmtDate(f.ts), text: f.fact, tag: "fait" }),
@@ -520,7 +522,7 @@ function renderSearchResults(r) {
       <div><div class="mtext">${esc(m.text)}</div><span class="mtag">${esc(m.tag)}</span></div></li>`,
         )
         .join("")
-    : `<li><div class="mdate"></div><div class="mtext" style="color:var(--ink-3)">Aucun résultat.</div></li>`;
+    : `<li><div class="mdate"></div><div class="mtext" style="color:var(--ink-3)">No result.</div></li>`;
 }
 
 /* ---------- Infra ---------- */
@@ -533,8 +535,13 @@ async function loadInfra() {
   }
 }
 
-/* ---------- Réglages : config de l'agent (AGENTS.md + MCP) ---------- */
+/* ---------- Settings: agent config (AGENTS.md + MCP) ---------- */
 const engine = { timer: null };
+
+function engineDot(online, active) {
+  const cls = online ? "ok" : active ? "warn" : "off";
+  return `<span class="engine-dot is-${cls}" id="engineDot"></span>`;
+}
 
 function renderEngine(e) {
   if (!e) return;
@@ -544,16 +551,16 @@ function renderEngine(e) {
   if (dot)
     dot.className = `engine-dot is-${online ? "ok" : active ? "warn" : "off"}`;
   $("#engineLabel").textContent = online
-    ? "Moteur en ligne"
+    ? "Engine online"
     : active
-      ? "Moteur en démarrage…"
-      : "Moteur hors ligne";
+      ? "Engine starting…"
+      : "Engine offline";
   $("#engineMeta").innerHTML = [
     ["Service", esc(e.unit || "—")],
     ["Version", esc(e.version || "—")],
-    ["Modèle", esc(e.model || "—")],
+    ["Model", esc(e.model || "—")],
     ["Agents", String(e.agents ?? "—")],
-    ["Serveurs MCP", String(e.mcp ?? "—")],
+    ["MCP servers", String(e.mcp ?? "—")],
   ]
     .map(
       ([k, v]) =>
@@ -564,7 +571,7 @@ function renderEngine(e) {
 
 async function loadEngine() {
   if (!LIVE) {
-    renderEngine({ active: false, online: false, unit: "démo", model: "—" });
+    renderEngine({ active: false, online: false, unit: "demo", model: "—" });
     return;
   }
   try {
@@ -576,18 +583,18 @@ async function loadEngine() {
 
 async function loadAgents() {
   if (!LIVE) {
-    $("#agentsPath").textContent = "démo";
+    $("#agentsPath").textContent = "demo";
     $("#agentsEditor").value =
-      "# Instructions de l'agent\n\n(éditable une fois connecté)";
+      "# Agent instructions\n\n(editable when connected to a live engine)";
     return;
   }
   try {
     const d = await api.get("config/agents");
     $("#agentsPath").textContent = d.path || "";
     $("#agentsEditor").value = d.text || "";
-    setStatus("agentsStatus", d.exists ? "chargé" : "nouveau", "ok");
+    setStatus("agentsStatus", d.exists ? "loaded" : "new file", "ok");
   } catch (_) {
-    setStatus("agentsStatus", "échec du chargement", "err");
+    setStatus("agentsStatus", "load failed", "err");
   }
 }
 
@@ -599,9 +606,9 @@ async function loadMcp() {
     const mcp = d.mcp || {};
     $("#mcpEditor").value = JSON.stringify(mcp, null, 2);
     renderMcpCards(mcp);
-    setStatus("mcpStatus", `${Object.keys(mcp).length} serveur(s)`, "ok");
+    setStatus("mcpStatus", `${Object.keys(mcp).length} server(s)`, "ok");
   } catch (_) {
-    setStatus("mcpStatus", "échec du chargement", "err");
+    setStatus("mcpStatus", "load failed", "err");
   }
 }
 
@@ -609,7 +616,7 @@ function renderMcpCards(mcp) {
   const keys = Object.keys(mcp);
   const box = $("#mcpCards");
   if (!keys.length) {
-    box.innerHTML = `<div class="mcp-empty">Aucun serveur MCP configuré.</div>`;
+    box.innerHTML = `<div class="mcp-empty">No MCP server configured yet.</div>`;
     return;
   }
   box.innerHTML = keys
@@ -626,7 +633,7 @@ function renderMcpCards(mcp) {
           <div class="mcp-card-head">
             <strong>${esc(name)}</strong>
             <span class="mcp-badge">${esc(type)}</span>
-            <span class="mcp-state ${enabled ? "on" : "off"}">${enabled ? "actif" : "désactivé"}</span>
+            <span class="mcp-state ${enabled ? "on" : "off"}">${enabled ? "enabled" : "disabled"}</span>
           </div>
           ${detail ? `<div class="mcp-detail">${esc(String(detail).slice(0, 140))}</div>` : ""}
         </div>`;
@@ -646,51 +653,51 @@ function setStatus(id, text, kind) {
 }
 
 async function saveAgents() {
-  if (!LIVE) return toast("Non connecté.");
-  setStatus("agentsStatus", "enregistrement…");
+  if (!LIVE) return toast("Not connected.");
+  setStatus("agentsStatus", "saving…");
   try {
     await api.post("config/agents", { text: $("#agentsEditor").value });
-    setStatus("agentsStatus", "enregistré", "ok");
-    toast("AGENTS.md enregistré. Relance le moteur pour appliquer.");
+    setStatus("agentsStatus", "saved", "ok");
+    toast("AGENTS.md saved. Restart the engine to apply.");
   } catch (_) {
-    setStatus("agentsStatus", "échec", "err");
+    setStatus("agentsStatus", "save failed", "err");
   }
 }
 
 async function saveMcp() {
-  if (!LIVE) return toast("Non connecté.");
+  if (!LIVE) return toast("Not connected.");
   let mcp;
   try {
     mcp = JSON.parse($("#mcpEditor").value || "{}");
   } catch (e) {
-    setStatus("mcpStatus", "JSON invalide", "err");
-    return toast("JSON invalide.");
+    setStatus("mcpStatus", "invalid JSON", "err");
+    return toast("Invalid JSON.");
   }
-  setStatus("mcpStatus", "enregistrement…");
+  setStatus("mcpStatus", "saving…");
   try {
     await api.post("config/mcp", { mcp });
-    setStatus("mcpStatus", "enregistré", "ok");
+    setStatus("mcpStatus", "saved", "ok");
     renderMcpCards(mcp);
-    toast("Config MCP enregistrée. Relance le moteur pour connecter.");
+    toast("MCP config saved. Restart the engine to connect them.");
   } catch (e) {
-    setStatus("mcpStatus", "échec", "err");
-    toast(String(e.message || "Échec.").slice(0, 300));
+    setStatus("mcpStatus", "save failed", "err");
+    toast(String(e.message || "Save failed.").slice(0, 300));
   }
 }
 
 async function restartEngine() {
-  if (!LIVE) return toast("Non connecté.");
+  if (!LIVE) return toast("Not connected.");
   const btn = $("#engineRestart");
   btn.disabled = true;
-  btn.textContent = "Redémarrage…";
-  toast("Redémarrage du moteur…");
+  btn.textContent = "Restarting…";
+  toast("Restarting the engine…");
   try {
     const r = await api.post("config/restart", {});
     if (!r.ok) {
-      toast("Échec du redémarrage : " + (r.error || "?"));
+      toast("Restart failed: " + (r.error || "?"));
       return;
     }
-    // Le redémarrage est asynchrone : on sonde l'état jusqu'au retour du moteur.
+    // The restart is asynchronous: poll until the engine is back online.
     let tries = 0;
     const poll = setInterval(async () => {
       tries++;
@@ -699,18 +706,18 @@ async function restartEngine() {
       if (online || tries >= 40) {
         clearInterval(poll);
         btn.disabled = false;
-        btn.textContent = "Relancer le moteur";
+        btn.textContent = "Restart engine";
         toast(
           online
-            ? "Moteur de nouveau en ligne."
-            : "Le moteur n'est pas revenu — vérifie le service.",
+            ? "Engine back online."
+            : "Engine did not come back — check the service.",
         );
       }
     }, 3000);
   } catch (_) {
-    toast("Échec du redémarrage.");
+    toast("Restart failed.");
     btn.disabled = false;
-    btn.textContent = "Relancer le moteur";
+    btn.textContent = "Restart engine";
   }
 }
 
@@ -719,6 +726,109 @@ function loadSettings() {
   loadAgents();
   loadMcp();
   loadAgentFiles();
+}
+
+/* ---------- Settings: user agent files ---------- */
+let EDIT_AGENT = null;
+
+async function loadAgentFiles() {
+  if (!LIVE) return;
+  try {
+    const d = await api.get("config/agent-files");
+    $("#agentFilesPath").textContent = d.dir || "";
+    renderAgentCards(d.agents || []);
+  } catch (_) {
+    setStatus("agentFilesStatus", "load failed", "err");
+  }
+}
+
+function renderAgentCards(agents) {
+  const box = $("#agentCards");
+  if (!agents.length) {
+    box.innerHTML = `<div class="mcp-empty">No custom agent yet.</div>`;
+    return;
+  }
+  box.innerHTML = agents
+    .map(
+      (a) => `
+      <div class="agent-card" data-name="${esc(a.name)}">
+        <div class="agent-card-head">
+          <strong>${esc(a.name)}</strong>
+          <span class="mcp-badge">${esc(a.mode || "subagent")}</span>
+          <button class="ghost-btn agent-card-edit" data-edit="${esc(a.name)}">Edit</button>
+        </div>
+        ${a.description ? `<div class="mcp-detail">${esc(a.description)}</div>` : ""}
+      </div>`,
+    )
+    .join("");
+  box
+    .querySelectorAll("[data-edit]")
+    .forEach((b) =>
+      b.addEventListener("click", () => editAgent(b.dataset.edit)),
+    );
+}
+
+async function editAgent(name) {
+  if (!LIVE) return;
+  try {
+    const d = await api.get(
+      `config/agent-file?name=${encodeURIComponent(name)}`,
+    );
+    EDIT_AGENT = name;
+    $("#agentEditName").textContent = d.path || name;
+    $("#agentEditor").value = d.text || "";
+    $("#agentEditorWrap").hidden = false;
+    $("#agentDelete").hidden = false;
+    $("#agentEditor").focus();
+  } catch (_) {
+    toast("Could not load the agent.");
+  }
+}
+
+function newAgent() {
+  EDIT_AGENT = "";
+  $("#agentEditName").textContent = "new agent";
+  $("#agentEditor").value =
+    "---\ndescription: What this agent does\nmode: subagent\n---\n\nYou are…\n";
+  $("#agentEditorWrap").hidden = false;
+  $("#agentDelete").hidden = true;
+  $("#agentEditor").focus();
+}
+
+async function saveAgent() {
+  const name = (EDIT_AGENT || "").trim();
+  if (!name) {
+    // Derive the name from the filename field via a prompt fallback.
+    const chosen = window.prompt("Agent name (a-z, 0-9, - _):", "");
+    if (!chosen) return;
+    EDIT_AGENT = chosen.trim().toLowerCase();
+  }
+  setStatus("agentFilesStatus", "saving…");
+  try {
+    await api.post("config/agent-file", {
+      name: EDIT_AGENT,
+      text: $("#agentEditor").value,
+    });
+    setStatus("agentFilesStatus", "saved", "ok");
+    toast("Agent saved. Restart the engine to use it.");
+    $("#agentEditorWrap").hidden = true;
+    loadAgentFiles();
+  } catch (_) {
+    setStatus("agentFilesStatus", "save failed", "err");
+  }
+}
+
+async function deleteAgent() {
+  if (!EDIT_AGENT) return;
+  if (!window.confirm(`Delete agent "${EDIT_AGENT}"?`)) return;
+  try {
+    await api.post("config/agent-file/delete", { name: EDIT_AGENT });
+    toast("Agent deleted.");
+    $("#agentEditorWrap").hidden = true;
+    loadAgentFiles();
+  } catch (_) {
+    toast("Delete failed.");
+  }
 }
 
 function initSettings() {
@@ -741,7 +851,10 @@ function initSettings() {
   $("#agentNew").addEventListener("click", newAgent);
   $("#agentSave").addEventListener("click", saveAgent);
   $("#agentDelete").addEventListener("click", deleteAgent);
-  $("#agentCancel").addEventListener("click", () => { $("#agentEditorWrap").hidden = true; });
+  $("#agentCancel").addEventListener("click", () => {
+    $("#agentEditorWrap").hidden = true;
+  });
+  // Live engine status while the settings view is open.
   engine.timer = setInterval(() => {
     if (
       document.body.dataset.mode === "live" &&
@@ -751,100 +864,7 @@ function initSettings() {
   }, 15000);
 }
 
-/* ---------- Réglages : fichiers d'agents ---------- */
-let EDIT_AGENT = null;
-
-async function loadAgentFiles() {
-  if (!LIVE) return;
-  try {
-    const d = await api.get("config/agent-files");
-    $("#agentFilesPath").textContent = d.dir || "";
-    renderAgentCards(d.agents || []);
-  } catch (_) {
-    setStatus("agentFilesStatus", "échec du chargement", "err");
-  }
-}
-
-function renderAgentCards(agents) {
-  const box = $("#agentCards");
-  if (!agents.length) {
-    box.innerHTML = `<div class="mcp-empty">Aucun agent perso.</div>`;
-    return;
-  }
-  box.innerHTML = agents
-    .map(
-      (a) => `
-      <div class="agent-card" data-name="${esc(a.name)}">
-        <div class="agent-card-head">
-          <strong>${esc(a.name)}</strong>
-          <span class="mcp-badge">${esc(a.mode || "subagent")}</span>
-          <button class="ghost-btn agent-card-edit" data-edit="${esc(a.name)}">Éditer</button>
-        </div>
-        ${a.description ? `<div class="mcp-detail">${esc(a.description)}</div>` : ""}
-      </div>`,
-    )
-    .join("");
-  box.querySelectorAll("[data-edit]").forEach((b) =>
-    b.addEventListener("click", () => editAgent(b.dataset.edit)),
-  );
-}
-
-async function editAgent(name) {
-  if (!LIVE) return;
-  try {
-    const d = await api.get(`config/agent-file?name=${encodeURIComponent(name)}`);
-    EDIT_AGENT = name;
-    $("#agentEditName").textContent = d.path || name;
-    $("#agentEditor").value = d.text || "";
-    $("#agentEditorWrap").hidden = false;
-    $("#agentDelete").hidden = false;
-  } catch (_) {
-    toast("Chargement impossible.");
-  }
-}
-
-function newAgent() {
-  EDIT_AGENT = "";
-  $("#agentEditName").textContent = "nouvel agent";
-  $("#agentEditor").value =
-    "---\ndescription: Ce que fait cet agent\nmode: subagent\n---\n\nTu es…\n";
-  $("#agentEditorWrap").hidden = false;
-  $("#agentDelete").hidden = true;
-}
-
-async function saveAgent() {
-  let name = (EDIT_AGENT || "").trim();
-  if (!name) {
-    const chosen = window.prompt("Nom de l'agent (a-z, 0-9, - _) :", "");
-    if (!chosen) return;
-    EDIT_AGENT = chosen.trim().toLowerCase();
-  }
-  setStatus("agentFilesStatus", "enregistrement…");
-  try {
-    await api.post("config/agent-file", { name: EDIT_AGENT, text: $("#agentEditor").value });
-    setStatus("agentFilesStatus", "enregistré", "ok");
-    toast("Agent enregistré. Relance le moteur pour l'utiliser.");
-    $("#agentEditorWrap").hidden = true;
-    loadAgentFiles();
-  } catch (_) {
-    setStatus("agentFilesStatus", "échec", "err");
-  }
-}
-
-async function deleteAgent() {
-  if (!EDIT_AGENT) return;
-  if (!window.confirm(`Supprimer l'agent « ${EDIT_AGENT} » ?`)) return;
-  try {
-    await api.post("config/agent-file/delete", { name: EDIT_AGENT });
-    toast("Agent supprimé.");
-    $("#agentEditorWrap").hidden = true;
-    loadAgentFiles();
-  } catch (_) {
-    toast("Échec de la suppression.");
-  }
-}
-
-/* ---------- Agents (sélecteur) ---------- */
+/* ---------- Agents (selector) ---------- */
 let AGENTS = [];
 let CURRENT_AGENT = "";
 function renderAgentSelect() {
@@ -877,7 +897,7 @@ function renderAgentSelect() {
     menu.hidden = true;
     btn.classList.remove("is-open");
     renderAgentSelect();
-    toast(`Agent : ${CURRENT_AGENT} (appliqué au prochain message)`);
+    toast(`Agent: ${CURRENT_AGENT} (applied to the next message)`);
   });
 }
 document.addEventListener("click", () => {
@@ -896,10 +916,10 @@ let streaming = false;
 let abortController = null;
 let pendingFiles = [];
 
-/* ---------- Mini renderer markdown (zéro dépendance) ----------
-   Gère : blocs de code ```, tableaux, code inline, gras, italique,
-   titres, listes, citations, liens, et les sauts de ligne. Échappe
-   le HTML avant tout, pour éviter toute injection. */
+/* ---------- Mini markdown renderer (zero dependency) ----------
+   Handles: ``` code blocks, tables, inline code, bold, italic,
+   headings, lists, quotes, links, and line breaks. Escapes
+   HTML first, to avoid any injection. */
 function escapeHtml(s) {
   return String(s == null ? "" : s)
     .replace(/&/g, "&amp;")
@@ -908,7 +928,7 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
-// Découpe une ligne de tableau en cellules (| a | b | -> [a, b]).
+// Split a table row into cells (| a | b | -> [a, b]).
 function splitRow(line) {
   let s = String(line).trim();
   if (s.startsWith("|")) s = s.slice(1);
@@ -916,7 +936,7 @@ function splitRow(line) {
   return s.split("|").map((c) => c.trim());
 }
 
-// Vrai si la ligne est un séparateur de tableau (|---|---|).
+// True if the line is a table separator (|---|---|).
 function isTableSep(line) {
   const cells = splitRow(line);
   return cells.length > 0 && cells.every((c) => /^:?-{2,}:?$/.test(c));
@@ -1007,7 +1027,7 @@ function mdToHtml(src) {
     (_, s, r) => `${pushChart(s, r)}\n`,
   );
 
-  // 1) Blocs de code : isolés avant tout traitement (placeholders).
+  // 1) Code blocks: isolated before any processing (placeholders).
   const codeBlocks = [];
   text = text.replace(/```([\w-]*)\n?([\s\S]*?)```/g, (_, lang, code) => {
     const i = codeBlocks.length;
@@ -1022,7 +1042,7 @@ function mdToHtml(src) {
 
   const fmt = (s) => inline(s);
 
-  // 2) Tableau : renvoie les lignes HTML d'une table (ou null si pas un début).
+  // 2) Table: return the HTML rows of a table (or null if not a start).
   const renderTableAt = (lines, i) => {
     if (!/^\s*\|.*\|\s*$/.test(lines[i])) return null;
     if (i + 1 >= lines.length || !isTableSep(lines[i + 1])) return null;
@@ -1035,7 +1055,7 @@ function mdToHtml(src) {
     return { html: renderTable(block), next: j };
   };
 
-  // 3) Blocs : parseur ligne par ligne (niveau récursif pour les citations).
+  // 3) Blocks: line-by-line parser (recursive level for quotes).
   const renderBlocks = (lines) => {
     let out = "";
     let para = [];
@@ -1085,7 +1105,7 @@ function mdToHtml(src) {
         continue;
       }
 
-      // Séparateur horizontal.
+      // Horizontal rule.
       if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(raw)) {
         flushPara();
         out += '<hr class="md-hr">';
@@ -1116,7 +1136,7 @@ function mdToHtml(src) {
         continue;
       }
 
-      // Liste (puces ou numérotée, avec imbrication).
+      // List (bullets or ordered, with nesting).
       if (/^(\s*)([-*+]|\d+[.)])\s+/.test(raw)) {
         flushPara();
         const items = [];
@@ -1145,7 +1165,7 @@ function mdToHtml(src) {
   };
 
   const html = renderBlocks(text.split("\n"));
-  // Sécurité : aucun placeholder de code ne doit subsister.
+  // Safety: no code placeholder must remain.
   return html.replace(
     /\u0000CODE(\d+)\u0000/g,
     (_, i) => codeBlocks[Number(i)] || "",
@@ -1203,7 +1223,7 @@ function mountCharts(root) {
     )
       .then((r) => r.json())
       .then((d) => {
-        if (!d.candles || !d.candles.length) throw new Error("pas de données");
+        if (!d.candles || !d.candles.length) throw new Error("no data");
         const up = (d.pct ?? 0) >= 0;
         el.classList.toggle("is-up", up);
         el.classList.toggle("is-down", !up);
@@ -1275,7 +1295,7 @@ function addMsg(text, who) {
       ? `<div class="avatar"></div><div class="bubble"></div>`
       : `<div class="bubble"></div>`;
   const bubble = el.querySelector(".bubble");
-  // Les réponses de Mav sont rendues en markdown ; les messages de
+  // Mav's answers are rendered as markdown; the user's
   // l'utilisateur restent en texte brut.
   if (who === "mav") {
     bubble.innerHTML = mdToHtml(text);
@@ -1317,10 +1337,10 @@ function clearMessages() {
 }
 function welcome() {
   clearMessages();
-  addMsg("Salut Raphaël. Je suis prêt — dis-moi ce dont tu as besoin.", "mav");
+  addMsg("Hi. I am ready — tell me what you need.", "mav");
 }
 function setChatTitle(title) {
-  $("#chatTitle").textContent = title || "Nouvelle discussion";
+  $("#chatTitle").textContent = title || "New conversation";
 }
 
 function thinking(on) {
@@ -1329,8 +1349,7 @@ function thinking(on) {
 
 function renderConvList() {
   if (!CONVS.length) {
-    $("#convList").innerHTML =
-      `<div class="conv-empty">Aucune discussion.</div>`;
+    $("#convList").innerHTML = `<div class="conv-empty">No conversation.</div>`;
     return;
   }
   $("#convList").innerHTML = CONVS.map(
@@ -1344,10 +1363,10 @@ function renderConvList() {
 
 async function loadConvs() {
   if (!LIVE) {
-    CONVS = [{ id: "mock", title: "Discussion de démo" }];
+    CONVS = [{ id: "mock", title: "Demo conversation" }];
     CURRENT_SESSION = "mock";
     renderConvList();
-    setChatTitle("Discussion de démo");
+    setChatTitle("Demo conversation");
     return;
   }
   try {
@@ -1376,7 +1395,7 @@ async function openSession(id) {
 async function newSession() {
   if (!LIVE) {
     CURRENT_SESSION = "mock";
-    setChatTitle("Nouvelle discussion");
+    setChatTitle("New conversation");
     welcome();
     go("chat");
     return;
@@ -1437,23 +1456,23 @@ $("#convList").addEventListener("click", (e) => {
   if (item) openSession(item.dataset.id);
 });
 
-/* ---------- Export & résumé ---------- */
+/* ---------- Export & summary ---------- */
 $("#exportBtn").addEventListener("click", () => {
-  if (!LIVE || !CURRENT_SESSION) return toast("Rien à exporter.");
+  if (!LIVE || !CURRENT_SESSION) return toast("Nothing to export.");
   window.location.href = `/api/session/export?id=${encodeURIComponent(CURRENT_SESSION)}`;
 });
 $("#summaryBtn").addEventListener("click", async () => {
   if (!LIVE || !CURRENT_SESSION) return;
-  toast("Je résume…");
+  toast("Summarizing…");
   try {
     const r = await api.post("session/summary", { id: CURRENT_SESSION });
-    addMsg("## Résumé\n" + (r.summary || "…"), "mav");
+    addMsg("## Summary\n" + (r.summary || "…"), "mav");
   } catch (_) {
-    toast("Échec du résumé.");
+    toast("Summary failed.");
   }
 });
 
-/* ---------- Pièces jointes ---------- */
+/* ---------- Attachments ---------- */
 function bindAttach(inputSel) {
   $(inputSel).addEventListener("change", async (e) => {
     for (const f of e.target.files) {
@@ -1469,7 +1488,7 @@ function bindAttach(inputSel) {
             });
             pendingFiles.push(up);
           } catch (_) {
-            toast("Upload échoué.");
+            toast("Upload failed.");
           }
         } else {
           pendingFiles.push({ filename: f.name, mime: f.type, url: "" });
@@ -1547,7 +1566,7 @@ async function send(raw, cmd) {
   let acc = "";
 
   const qs = new URLSearchParams({
-    prompt: text || cmd || "(pièce jointe)",
+    prompt: text || cmd || "(attachment)",
     session: CURRENT_SESSION || "",
     agent: CURRENT_AGENT || "",
   });
@@ -1612,8 +1631,8 @@ async function send(raw, cmd) {
       try {
         ({ value, done } = await reader.read());
       } catch (_) {
-        // Le serveur peut fermer la connexion juste après l'event final :
-        // si on a déjà le résultat, ce n'est pas une erreur.
+        // The server may close the connection right after the final event:
+        // if we already have the result, that is not an error.
         break;
       }
       if (done) break;
@@ -1646,7 +1665,7 @@ async function send(raw, cmd) {
     if (errorMsg) {
       addMsg(errorMsg, "mav");
     } else if (!acc) {
-      addMsg("(pas de réponse)", "mav");
+      addMsg("(no answer)", "mav");
     } else if (bubble) {
       bubble.innerHTML = mdToHtml(acc);
       mountCharts(bubble);
@@ -1668,7 +1687,7 @@ $("#stopBtn").addEventListener("click", async () => {
     await api.post("session/abort", { id: CURRENT_SESSION });
   } catch (_) {}
   setStreaming(false);
-  toast("Stoppé.");
+  toast("Stopped.");
 });
 
 $("#chatForm").addEventListener("submit", (e) => {
@@ -1691,7 +1710,7 @@ $$(".chip").forEach((c) =>
   }),
 );
 
-/* ---------- Voix (dictée + lecture) ---------- */
+/* ---------- Voice (dictation + read-aloud) ---------- */
 const S = { shouldSpeak: false, recog: null };
 function setupVoice() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1706,7 +1725,7 @@ function setupVoice() {
 setupVoice();
 
 function startDictation(btn, inputSel) {
-  if (!S.recog) return toast("Dictée non supportée par ce navigateur.");
+  if (!S.recog) return toast("Dictation not supported by this browser.");
   const input = $(inputSel);
   S.recog.onresult = (e) => {
     input.value = (input.value + " " + e.results[0][0].transcript).trim();
@@ -1737,9 +1756,7 @@ $("#voiceToggle").addEventListener("click", () => {
   S.shouldSpeak = !S.shouldSpeak;
   $("#voiceToggle").classList.toggle("is-on", S.shouldSpeak);
   if (!S.shouldSpeak) speechSynthesis.cancel();
-  toast(
-    S.shouldSpeak ? "Lecture vocale activée." : "Lecture vocale désactivée.",
-  );
+  toast(S.shouldSpeak ? "Read-aloud enabled." : "Read-aloud disabled.");
 });
 
 /* ---------- Notifications (Web Push) ---------- */
@@ -1750,7 +1767,7 @@ function urlB64ToUint8Array(b64) {
   return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 }
 
-// Synchronise l'état visuel des boutons push (sidebar + mobile).
+// Sync the visual state of the push buttons (sidebar + mobile).
 function setNotifyUi(on) {
   N.enabled = on;
   document
@@ -1760,7 +1777,7 @@ function setNotifyUi(on) {
 
 async function togglePushNotify() {
   if (!("Notification" in window) || !("serviceWorker" in navigator)) {
-    return toast("Notifications non supportées.");
+    return toast("Notifications not supported.");
   }
   if (N.enabled) {
     try {
@@ -1772,11 +1789,11 @@ async function togglePushNotify() {
       }
     } catch (_) {}
     setNotifyUi(false);
-    return toast("Notifications désactivées.");
+    return toast("Notifications disabled.");
   }
   try {
     const perm = await Notification.requestPermission();
-    if (perm !== "granted") return toast("Permission refusée.");
+    if (perm !== "granted") return toast("Permission denied.");
     const { key } = await api.get("push/key");
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.subscribe({
@@ -1785,7 +1802,7 @@ async function togglePushNotify() {
     });
     await api.post("push/subscribe", sub.toJSON());
     setNotifyUi(true);
-    toast("Notifications activées.");
+    toast("Notifications enabled.");
   } catch (_) {
     toast("Échec de l'activation.");
   }
@@ -1794,21 +1811,21 @@ async function togglePushNotify() {
 $("#notifyToggle").addEventListener("click", togglePushNotify);
 $("#mobileNotify").addEventListener("click", togglePushNotify);
 
-// Bouton « tester » : envoie un push immédiat pour vérifier la livraison.
+// "Test" button: send an immediate push to check delivery.
 const testBtn = $("#mobileNotifyTest");
 if (testBtn) {
   testBtn.addEventListener("click", async () => {
     if (!N.enabled) return toast("Active d'abord les notifications (cloche).");
     try {
       const r = await api.post("push/test", {});
-      toast(r.sent ? "Push de test envoyé." : "Aucun abonné à qui envoyer.");
+      toast(r.sent ? "Test push sent." : "No subscriber to send to.");
     } catch (_) {
       toast("Échec de l'envoi.");
     }
   });
 }
 
-// Au chargement : reflète l'état réel de l'abonnement.
+// On load: reflect the real subscription state.
 (async () => {
   try {
     if (!("serviceWorker" in navigator) || !("Notification" in window)) return;
@@ -1825,11 +1842,11 @@ function openPalette() {
   palette.hidden = false;
   $("#paletteInput").value = "";
   $("#paletteResults").innerHTML =
-    `<div class="pal-item" data-pal-action="new-chat"><span class="pal-kind">Action</span><span class="pal-text">Nouvelle discussion</span></div>
-    <div class="pal-item" data-pal-view="jobs"><span class="pal-kind">Aller</span><span class="pal-text">Automatisations</span></div>
-    <div class="pal-item" data-pal-view="memory"><span class="pal-kind">Aller</span><span class="pal-text">Souvenirs</span></div>
-    <div class="pal-item" data-pal-view="watch"><span class="pal-kind">Aller</span><span class="pal-text">Surveillance</span></div>
-    <div class="pal-item" data-pal-view="system"><span class="pal-kind">Aller</span><span class="pal-text">Infra</span></div>`;
+    `<div class="pal-item" data-pal-action="new-chat"><span class="pal-kind">Action</span><span class="pal-text">New conversation</span></div>
+    <div class="pal-item" data-pal-view="jobs"><span class="pal-kind">Go</span><span class="pal-text">Automations</span></div>
+    <div class="pal-item" data-pal-view="memory"><span class="pal-kind">Go</span><span class="pal-text">Memories</span></div>
+    <div class="pal-item" data-pal-view="watch"><span class="pal-kind">Go</span><span class="pal-text">Watch</span></div>
+    <div class="pal-item" data-pal-view="system"><span class="pal-kind">Go</span><span class="pal-text">Infra</span></div>`;
   $("#paletteInput").focus();
 }
 function closePalette() {
@@ -1858,7 +1875,7 @@ $("#paletteInput").addEventListener("input", (e) => {
       c.title.toLowerCase().includes(q.toLowerCase()),
     ).forEach((c) =>
       items.push({
-        kind: "Discussion",
+        kind: "Conversation",
         text: c.title,
         action: "open",
         id: c.id,
@@ -1883,7 +1900,7 @@ $("#paletteInput").addEventListener("input", (e) => {
               `<div class="pal-item" ${i.action === "open" ? `data-pal-open="${esc(i.id)}"` : ""}><span class="pal-kind">${esc(i.kind)}</span><span class="pal-text">${esc(i.text)}</span></div>`,
           )
           .join("")
-      : `<div class="pal-empty">Aucun résultat.</div>`;
+      : `<div class="pal-empty">No result.</div>`;
   }, 250);
 });
 $("#paletteResults").addEventListener("click", (e) => {
@@ -1912,9 +1929,8 @@ initSettings();
 
 /* ---------- Chargement ---------- */
 async function loadLive() {
-  // Seule la sonde « status » décide si on est en direct. Les autres appels
-  // échouent indépendamment : un endpoint en retard ne doit pas faire passer
-  // toute l'interface en mode démo.
+  // Only the "status" probe decides whether we are live. Other calls fail
+  // independently: a slow endpoint must not switch the whole UI to demo mode.
   let status = null;
   try {
     status = await api.get("status");
@@ -1958,7 +1974,7 @@ async function loadLive() {
     }),
   ]);
 
-  renderToday([{ t: "—", text: "Connecté au moteur de l'agent en direct." }]);
+  renderToday([{ t: "—", text: "Connected to the agent engine, live." }]);
 
   try {
     await loadConvs();
@@ -1969,8 +1985,8 @@ async function loadLive() {
     renderConvList();
   }
 
-  // Une notification a été cliquée : on ouvre une discussion dédiée et on
-  // demande le détail de l'alerte.
+  // A notification was tapped: open a dedicated conversation and
+  // ask for the alert detail.
   await maybeOpenNotif();
 }
 
@@ -2009,10 +2025,10 @@ async function openNotifById(id) {
   const topic =
     n.topic === "watch" ? "de veille" : n.topic === "job" ? "de job" : "";
   const prompt =
-    `Détaille-moi cette alerte ${topic} que tu m'as envoyée.\n\n` +
+    `Give me the details of this ${topic} alert you sent me.\n\n` +
     `Titre : ${n.title || ""}\n` +
     `Info : ${n.body || ""}\n\n` +
-    "Explique le contexte, pourquoi ça compte, et ce qu'il faut regarder ensuite. " +
+    "Explain the context, why it matters, and what to watch next. " +
     "Sois concret et bref.";
   go("chat");
   await send(prompt, null);
@@ -2050,7 +2066,7 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker
       .register("sw.js")
       .then((reg) => {
-        // Une nouvelle version du SW est trouvée : on prend la main tout de suite.
+        // A new SW version is found: take over immediately.
         reg.addEventListener("updatefound", () => {
           const sw = reg.installing;
           if (sw)
@@ -2065,7 +2081,7 @@ if ("serviceWorker" in navigator) {
         });
       })
       .catch(() => {});
-    // Quand le SW prend la main, on recharge une fois pour servir la version fraîche.
+    // When the SW takes over, reload once to serve the fresh version.
     let reloaded = false;
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       if (reloaded) return;
@@ -2114,7 +2130,7 @@ if (
   localStorage.getItem("mav-install-dismissed") !== "1"
 ) {
   const s = banner.querySelector(".install-text span");
-  if (s) s.textContent = "Appuie sur Partager puis « Sur l'écran d'accueil ».";
+  if (s) s.textContent = 'Tap Share then "Add to Home Screen".';
   $("#installBtn").textContent = "Compris";
   $("#installBtn").addEventListener(
     "click",
@@ -2127,7 +2143,7 @@ if (
   banner.hidden = false;
 }
 
-/* Rafraîchit le statut */
+/* Refresh the status */
 setInterval(async () => {
   if (!LIVE) return;
   try {

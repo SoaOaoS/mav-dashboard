@@ -33,7 +33,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;450;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="assets/css/style.css" />
@@ -56,7 +56,7 @@
         >
           <span class="nav-ico" data-ico="bolt"></span>
         </button>
-        <button class="mobile-icon" id="mobileNew" title="Nouvelle discussion">
+        <button class="mobile-icon" id="mobileNew" title="New conversation">
           <span class="nav-ico" data-ico="plus"></span>
         </button>
         <button class="mobile-icon" id="mobileSearch" title="Rechercher">
@@ -84,26 +84,26 @@
 
         <nav class="nav">
           <button class="nav-item is-active" data-view="home">
-            <span class="nav-ico" data-ico="home"></span> Accueil
+            <span class="nav-ico" data-ico="home"></span> Home
           </button>
           <button class="nav-item" data-view="chat">
-            <span class="nav-ico" data-ico="chat"></span> Discussions
+            <span class="nav-ico" data-ico="chat"></span> Conversations
           </button>
           <button class="nav-item" data-view="jobs">
-            <span class="nav-ico" data-ico="bolt"></span> Automatisations
+            <span class="nav-ico" data-ico="bolt"></span> Automations
             <span class="nav-count" id="navJobsCount">3</span>
           </button>
           <button class="nav-item" data-view="memory">
-            <span class="nav-ico" data-ico="heart"></span> Souvenirs
+            <span class="nav-ico" data-ico="heart"></span> Memories
           </button>
           <button class="nav-item" data-view="watch">
-            <span class="nav-ico" data-ico="eye"></span> Surveillance
+            <span class="nav-ico" data-ico="eye"></span> Watch
           </button>
           <button class="nav-item" data-view="system">
             <span class="nav-ico" data-ico="cpu"></span> Infra
           </button>
           <button class="nav-item" data-view="settings">
-            <span class="nav-ico" data-ico="sliders"></span> Réglages
+            <span class="nav-ico" data-ico="sliders"></span> Settings
           </button>
         </nav>
 
@@ -132,7 +132,7 @@
         <!-- HOME -->
         <section class="view is-active" id="view-home">
           <header class="hello">
-            <h1 id="greeting">Bonjour Raphaël</h1>
+            <h1 id="greeting">Hello</h1>
             <p id="greetingSub">
               Content de te revoir. Qu'est-ce qu'on fait aujourd'hui ?
             </p>
@@ -146,7 +146,7 @@
             <input
               type="text"
               id="heroInput"
-              placeholder="Écris à Mav… « prépare un point sur mes mails »"
+              placeholder="Write to Mav… 'prepare a summary of my mail'"
               aria-label="Message"
             />
             <button
@@ -162,16 +162,14 @@
             </button>
           </form>
           <div class="chips" id="heroChips">
-            <button class="chip" data-cmd="statut">
-              Où en est le système ?
+            <button class="chip" data-cmd="status">
+              How is the system doing?
             </button>
-            <button class="chip" data-cmd="automatisations">
-              Mes automatisations
+            <button class="chip" data-cmd="automations">My automations</button>
+            <button class="chip" data-cmd="memories">
+              What do you remember?
             </button>
-            <button class="chip" data-cmd="souvenirs">
-              Qu'est-ce que tu retiens ?
-            </button>
-            <button class="chip" data-cmd="surveillance">Des alertes ?</button>
+            <button class="chip" data-cmd="watch">Any alerts?</button>
           </div>
 
           <div class="stats" id="stats"></div>
@@ -186,7 +184,7 @@
             </section>
             <section class="card">
               <div class="card-head">
-                <h2>Automatisations</h2>
+                <h2>Automations</h2>
                 <button class="link" data-goto="jobs">Tout voir</button>
               </div>
               <ul class="mini-jobs" id="homeJobs"></ul>
@@ -195,8 +193,8 @@
 
           <section class="card job-results-card">
             <div class="card-head">
-              <h2>Résultats des jobs</h2>
-              <span class="card-sub">Les derniers rapports générés</span>
+              <h2>Job results</h2>
+              <span class="card-sub">The latest generated reports</span>
             </div>
             <div class="job-results" id="jobResults"></div>
           </section>
@@ -216,7 +214,7 @@
             <div class="card chat-card">
               <div class="chat-head">
                 <div class="chat-head-left">
-                  <h2 id="chatTitle">Nouvelle discussion</h2>
+                  <h2 id="chatTitle">New conversation</h2>
                   <span class="chat-agent" id="chatAgentLabel"></span>
                 </div>
                 <div class="chat-head-actions">
@@ -227,7 +225,7 @@
                   >
                     <span class="nav-ico" data-ico="download"></span>
                   </button>
-                  <button class="icon-btn" id="summaryBtn" title="Résumer">
+                  <button class="icon-btn" id="summaryBtn" title="Summarize">
                     <span class="nav-ico" data-ico="sparkle"></span>
                   </button>
                   <button class="icon-btn" id="renameBtn" title="Renommer">
@@ -271,22 +269,18 @@
                   class="stop-btn"
                   id="stopBtn"
                   hidden
-                  aria-label="Arrêter"
+                  aria-label="Stop"
                 >
                   <span class="nav-ico" data-ico="stop"></span>
                 </button>
               </form>
               <div class="attachments" id="chatAttachments" hidden></div>
               <div class="chips" id="chatChips">
-                <button class="chip" data-cmd="statut">Statut</button>
-                <button class="chip" data-cmd="automatisations">
-                  Automatisations
-                </button>
-                <button class="chip" data-cmd="souvenirs">Souvenirs</button>
-                <button class="chip" data-cmd="surveillance">
-                  Surveillance
-                </button>
-                <button class="chip" data-cmd="marches">Marchés</button>
+                <button class="chip" data-cmd="status">Status</button>
+                <button class="chip" data-cmd="automations">Automations</button>
+                <button class="chip" data-cmd="memories">Memories</button>
+                <button class="chip" data-cmd="watch">Watch</button>
+                <button class="chip" data-cmd="markets">Markets</button>
               </div>
             </div>
           </div>
@@ -295,8 +289,8 @@
         <!-- JOBS -->
         <section class="view" id="view-jobs">
           <header class="view-head">
-            <h1>Automatisations</h1>
-            <p>Ce que je fais pour toi, sans que tu aies à demander.</p>
+            <h1>Automations</h1>
+            <p>What I do for you, without you having to ask.</p>
           </header>
           <div class="jobs" id="jobsList"></div>
         </section>
@@ -304,15 +298,15 @@
         <!-- MEMORY -->
         <section class="view" id="view-memory">
           <header class="view-head">
-            <h1>Souvenirs</h1>
-            <p>Les choses que je retiens d'une conversation à l'autre.</p>
+            <h1>Memories</h1>
+            <p>The things I remember from one conversation to the next.</p>
           </header>
           <div class="search-inline">
             <span class="nav-ico" data-ico="search"></span>
             <input
               type="search"
               id="memorySearch"
-              placeholder="Chercher dans la mémoire et les documents…"
+              placeholder="Search memory and documents…"
             />
           </div>
           <div class="card">
@@ -323,11 +317,8 @@
         <!-- WATCH -->
         <section class="view" id="view-watch">
           <header class="view-head">
-            <h1>Surveillance</h1>
-            <p>
-              Je surveille ça pour toi et je te préviens seulement quand ça
-              change.
-            </p>
+            <h1>Watch</h1>
+            <p>I watch this for you and only ping you when it change.</p>
           </header>
           <form class="watch-add" id="watchForm">
             <select id="watchKind" aria-label="Type">
@@ -341,9 +332,9 @@
             <input
               type="text"
               id="watchTarget"
-              placeholder="URL, requête, owner/repo…"
+              placeholder="URL, query, owner/repo…"
             />
-            <button type="submit">Ajouter</button>
+            <button type="submit">Add</button>
           </form>
           <div class="watch" id="watchList"></div>
         </section>
@@ -352,7 +343,7 @@
         <section class="view" id="view-system">
           <header class="view-head">
             <h1>Infra</h1>
-            <p>L'hyperviseur GAIA et ses machines, en direct de Proxmox.</p>
+            <p>Your hypervisor and its machines, live from Proxmox.</p>
           </header>
           <div class="infra-nodes" id="infraNodes"></div>
           <div class="infra-vms" id="infraVms"></div>
@@ -361,109 +352,118 @@
         <!-- SETTINGS -->
         <section class="view" id="view-settings">
           <header class="view-head">
-            <h1>Réglages</h1>
-            <p>Ton agent, tes règles — édite AGENTS.md et tes serveurs MCP.</p>
+            <h1>Settings</h1>
+            <p>Your agent, your rules — edit AGENTS.md and MCP servers.</p>
           </header>
 
+          <!-- Engine status -->
           <div class="card engine-card" id="engineCard">
             <div class="engine-head">
               <div class="engine-title">
                 <span class="engine-dot" id="engineDot"></span>
-                <strong id="engineLabel">État du moteur</strong>
+                <strong id="engineLabel">Engine status</strong>
               </div>
-              <button class="ghost-btn" id="engineRefresh">Rafraîchir</button>
+              <button class="ghost-btn" id="engineRefresh" title="Re-check">
+                Refresh
+              </button>
             </div>
             <div class="engine-meta" id="engineMeta"></div>
             <div class="engine-actions">
               <button class="btn-primary" id="engineRestart">
-                Relancer le moteur
+                Restart engine
               </button>
-              <span class="hint">Applique AGENTS.md et les MCP.</span>
+              <span class="hint">Applies AGENTS.md and MCP changes.</span>
             </div>
           </div>
 
+          <!-- Tabs -->
           <div class="settings-tabs">
             <button class="settings-tab is-active" data-stab="agents">
               AGENTS.md
             </button>
-            <button class="settings-tab" data-stab="agentfiles">
-              Agents
-            </button>
-            <button class="settings-tab" data-stab="mcp">Serveurs MCP</button>
+            <button class="settings-tab" data-stab="agentfiles">Agents</button>
+            <button class="settings-tab" data-stab="mcp">MCP servers</button>
           </div>
 
+          <!-- AGENTS.md editor -->
           <div class="settings-panel is-active" id="panel-agents">
             <div class="editor-bar">
               <span class="editor-path" id="agentsPath"></span>
               <div class="editor-actions">
                 <span class="editor-status" id="agentsStatus"></span>
-                <button class="ghost-btn" id="agentsReload">Recharger</button>
-                <button class="btn-primary" id="agentsSave">Enregistrer</button>
+                <button class="ghost-btn" id="agentsReload">Reload</button>
+                <button class="btn-primary" id="agentsSave">Save</button>
               </div>
             </div>
             <textarea
               class="code-editor"
               id="agentsEditor"
               spellcheck="false"
-              placeholder="# Instructions de ton agent&#10;&#10;Écris en Markdown comment tu veux que ton agent se comporte…"
+              placeholder="# Your agent instructions&#10;&#10;Write in Markdown how you want your agent to behave…"
             ></textarea>
             <p class="editor-hint">
-              Ce fichier est chargé au début de chaque session. Relance le
-              moteur pour l'appliquer.
+              This file is loaded at the start of every session. Restart the
+              engine to apply it.
             </p>
           </div>
 
+          <!-- Agent files -->
           <div class="settings-panel" id="panel-agentfiles">
             <div class="editor-bar">
               <span class="editor-path" id="agentFilesPath"></span>
               <div class="editor-actions">
                 <span class="editor-status" id="agentFilesStatus"></span>
-                <button class="ghost-btn" id="agentNew">Nouvel agent</button>
+                <button class="ghost-btn" id="agentNew">New agent</button>
               </div>
             </div>
             <p class="editor-hint">
-              Tes agents spécialisés. Chacun est un fichier Markdown (frontmatter
-              YAML + prompt) chargé par opencode comme subagent appelable par son
-              nom. Relance le moteur pour les rendre disponibles.
+              Your own specialised agents. Each is a Markdown file (YAML
+              frontmatter + prompt) that opencode loads as a subagent you can
+              call by name. Restart the engine to make them available.
             </p>
             <div class="agent-cards" id="agentCards"></div>
+
             <div class="agent-editor-wrap" id="agentEditorWrap" hidden>
               <div class="editor-bar">
                 <span class="editor-path" id="agentEditName"></span>
                 <div class="editor-actions">
-                  <button class="ghost-btn" id="agentCancel">Annuler</button>
-                  <button class="danger-btn" id="agentDelete">Supprimer</button>
-                  <button class="btn-primary" id="agentSave">Enregistrer</button>
+                  <button class="ghost-btn" id="agentCancel">Cancel</button>
+                  <button class="danger-btn" id="agentDelete">Delete</button>
+                  <button class="btn-primary" id="agentSave">Save</button>
                 </div>
               </div>
-              <textarea class="code-editor" id="agentEditor" spellcheck="false"
-                placeholder="---&#10;description: Ce que fait cet agent&#10;mode: subagent&#10;---&#10;&#10;Tu es…"></textarea>
+              <textarea
+                class="code-editor"
+                id="agentEditor"
+                spellcheck="false"
+                placeholder="---&#10;description: What this agent does&#10;mode: subagent&#10;---&#10;&#10;You are…"
+              ></textarea>
             </div>
           </div>
 
+          <!-- MCP editor -->
           <div class="settings-panel" id="panel-mcp">
             <div class="editor-bar">
               <span class="editor-path" id="mcpPath"></span>
               <div class="editor-actions">
                 <span class="editor-status" id="mcpStatus"></span>
-                <button class="ghost-btn" id="mcpReload">Recharger</button>
-                <button class="btn-primary" id="mcpSave">Enregistrer</button>
+                <button class="ghost-btn" id="mcpReload">Reload</button>
+                <button class="btn-primary" id="mcpSave">Save</button>
               </div>
             </div>
             <p class="editor-hint">
-              Objet JSON des serveurs MCP (même forme que la clé
-              <code>"mcp"</code> d'opencode.json). Les secrets sont masqués —
-              laisse les points pour garder une valeur existante. Relance le
-              moteur pour les connecter.
+              JSON object of MCP servers (same shape as opencode.json's
+              <code>"mcp"</code> key). Secrets are masked — leave the dots to
+              keep an existing value. Restart the engine to connect them.
             </p>
             <div class="mcp-cards" id="mcpCards"></div>
             <details class="mcp-raw">
-              <summary>Avancé : éditer le JSON brut</summary>
+              <summary>Advanced: edit raw JSON</summary>
               <textarea
                 class="code-editor code-editor--json"
                 id="mcpEditor"
                 spellcheck="false"
-                placeholder='{ "mon-serveur": { "type": "remote", "url": "https://...", "enabled": true } }'
+                placeholder='{ "my-server": { "type": "remote", "url": "https://...", "enabled": true } }'
               ></textarea>
             </details>
           </div>
@@ -475,11 +475,11 @@
     <nav class="tabbar" id="tabbar">
       <button class="tab is-active" data-view="home">
         <span class="nav-ico" data-ico="home"></span>
-        <span class="tab-label">Accueil</span>
+        <span class="tab-label">Home</span>
       </button>
       <button class="tab" data-view="chat">
         <span class="nav-ico" data-ico="chat"></span>
-        <span class="tab-label">Discussions</span>
+        <span class="tab-label">Chats</span>
       </button>
       <button class="tab" data-view="jobs">
         <span class="nav-ico" data-ico="bolt"></span>
@@ -487,7 +487,7 @@
       </button>
       <button class="tab" data-view="memory">
         <span class="nav-ico" data-ico="heart"></span>
-        <span class="tab-label">Souvenirs</span>
+        <span class="tab-label">Memories</span>
       </button>
       <button class="tab" data-view="system">
         <span class="nav-ico" data-ico="cpu"></span>
@@ -495,7 +495,7 @@
       </button>
       <button class="tab" data-view="settings">
         <span class="nav-ico" data-ico="sliders"></span>
-        <span class="tab-label">Réglages</span>
+        <span class="tab-label">Settings</span>
       </button>
     </nav>
 
@@ -507,7 +507,7 @@
           <input
             type="text"
             id="paletteInput"
-            placeholder="Chercher une discussion, un souvenir, une action…"
+            placeholder="Search a conversation, a memory, an action…"
             autocomplete="off"
           />
         </div>
@@ -519,7 +519,7 @@
     <div class="install-banner" id="installBanner" hidden>
       <div class="install-text">
         <strong>Installer Mav</strong>
-        <span>Ajoute-la à ton écran d'accueil, comme une appli.</span>
+        <span>Add it to your home screen, like an app.</span>
       </div>
       <div class="install-actions">
         <button class="install-btn" id="installBtn">Installer</button>
