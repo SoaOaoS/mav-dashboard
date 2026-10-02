@@ -199,6 +199,7 @@ function go(view) {
     v.classList.toggle("is-active", v.id === `view-${view}`),
   );
   if (view === "system") loadInfra();
+  if (view === "settings") loadSettings();
   setMobileTitle(view);
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -217,6 +218,7 @@ const VIEW_TITLES = {
   memory: "Souvenirs",
   watch: "Surveillance",
   system: "Infra",
+  settings: "Réglages",
 };
 function setMobileTitle(view) {
   const t = $("#mobileTitle");
@@ -521,6 +523,316 @@ async function loadInfra() {
     renderInfra(await api.get("proxmox"));
   } catch (_) {
     renderInfra(null);
+  }
+}
+
+/* ---------- Réglages : config de l'agent (AGENTS.md + MCP) ---------- */
+const engine = { timer: null };
+
+function renderEngine(e) {
+  if (!e) return;
+  const online = !!e.online;
+  const active = !!e.active;
+  const dot = $("#engineDot");
+  if (dot)
+    dot.className = `engine-dot is-${online ? "ok" : active ? "warn" : "off"}`;
+  $("#engineLabel").textContent = online
+    ? "Moteur en ligne"
+    : active
+      ? "Moteur en démarrage…"
+      : "Moteur hors ligne";
+  $("#engineMeta").innerHTML = [
+    ["Service", esc(e.unit || "—")],
+    ["Version", esc(e.version || "—")],
+    ["Modèle", esc(e.model || "—")],
+    ["Agents", String(e.agents ?? "—")],
+    ["Serveurs MCP", String(e.mcp ?? "—")],
+  ]
+    .map(
+      ([k, v]) =>
+        `<div class="engine-row"><span>${k}</span><span>${v}</span></div>`,
+    )
+    .join("");
+}
+
+async function loadEngine() {
+  if (!LIVE) {
+    renderEngine({ active: false, online: false, unit: "démo", model: "—" });
+    return;
+  }
+  try {
+    renderEngine(await api.get("config/engine"));
+  } catch (_) {
+    renderEngine({ active: false, online: false, unit: "?", model: "?" });
+  }
+}
+
+async function loadAgents() {
+  if (!LIVE) {
+    $("#agentsPath").textContent = "démo";
+    $("#agentsEditor").value =
+      "# Instructions de l'agent\n\n(éditable une fois connecté)";
+    return;
+  }
+  try {
+    const d = await api.get("config/agents");
+    $("#agentsPath").textContent = d.path || "";
+    $("#agentsEditor").value = d.text || "";
+    setStatus("agentsStatus", d.exists ? "chargé" : "nouveau", "ok");
+  } catch (_) {
+    setStatus("agentsStatus", "échec du chargement", "err");
+  }
+}
+
+async function loadMcp() {
+  if (!LIVE) return;
+  try {
+    const d = await api.get("config/mcp");
+    $("#mcpPath").textContent = d.path || "";
+    const mcp = d.mcp || {};
+    $("#mcpEditor").value = JSON.stringify(mcp, null, 2);
+    renderMcpCards(mcp);
+    setStatus("mcpStatus", `${Object.keys(mcp).length} serveur(s)`, "ok");
+  } catch (_) {
+    setStatus("mcpStatus", "échec du chargement", "err");
+  }
+}
+
+function renderMcpCards(mcp) {
+  const keys = Object.keys(mcp);
+  const box = $("#mcpCards");
+  if (!keys.length) {
+    box.innerHTML = `<div class="mcp-empty">Aucun serveur MCP configuré.</div>`;
+    return;
+  }
+  box.innerHTML = keys
+    .map((name) => {
+      const s = mcp[name] || {};
+      const type = s.type || (s.command ? "local" : s.url ? "remote" : "?");
+      const enabled = s.enabled !== false;
+      const detail =
+        s.url ||
+        (Array.isArray(s.command) ? s.command.join(" ") : s.command) ||
+        "";
+      return `
+        <div class="mcp-card ${enabled ? "" : "is-off"}">
+          <div class="mcp-card-head">
+            <strong>${esc(name)}</strong>
+            <span class="mcp-badge">${esc(type)}</span>
+            <span class="mcp-state ${enabled ? "on" : "off"}">${enabled ? "actif" : "désactivé"}</span>
+          </div>
+          ${detail ? `<div class="mcp-detail">${esc(String(detail).slice(0, 140))}</div>` : ""}
+        </div>`;
+    })
+    .join("");
+}
+
+function setStatus(id, text, kind) {
+  const el = $("#" + id);
+  if (!el) return;
+  el.textContent = text;
+  el.className = "editor-status" + (kind ? " is-" + kind : "");
+  if (kind === "ok")
+    setTimeout(() => {
+      el.textContent = "";
+    }, 2500);
+}
+
+async function saveAgents() {
+  if (!LIVE) return toast("Non connecté.");
+  setStatus("agentsStatus", "enregistrement…");
+  try {
+    await api.post("config/agents", { text: $("#agentsEditor").value });
+    setStatus("agentsStatus", "enregistré", "ok");
+    toast("AGENTS.md enregistré. Relance le moteur pour appliquer.");
+  } catch (_) {
+    setStatus("agentsStatus", "échec", "err");
+  }
+}
+
+async function saveMcp() {
+  if (!LIVE) return toast("Non connecté.");
+  let mcp;
+  try {
+    mcp = JSON.parse($("#mcpEditor").value || "{}");
+  } catch (e) {
+    setStatus("mcpStatus", "JSON invalide", "err");
+    return toast("JSON invalide.");
+  }
+  setStatus("mcpStatus", "enregistrement…");
+  try {
+    await api.post("config/mcp", { mcp });
+    setStatus("mcpStatus", "enregistré", "ok");
+    renderMcpCards(mcp);
+    toast("Config MCP enregistrée. Relance le moteur pour connecter.");
+  } catch (_) {
+    setStatus("mcpStatus", "échec", "err");
+  }
+}
+
+async function restartEngine() {
+  if (!LIVE) return toast("Non connecté.");
+  const btn = $("#engineRestart");
+  btn.disabled = true;
+  btn.textContent = "Redémarrage…";
+  toast("Redémarrage du moteur…");
+  try {
+    const r = await api.post("config/restart", {});
+    if (!r.ok) {
+      toast("Échec du redémarrage : " + (r.error || "?"));
+      return;
+    }
+    // Le redémarrage est asynchrone : on sonde l'état jusqu'au retour du moteur.
+    let tries = 0;
+    const poll = setInterval(async () => {
+      tries++;
+      await loadEngine();
+      const online = $("#engineDot").classList.contains("is-ok");
+      if (online || tries >= 40) {
+        clearInterval(poll);
+        btn.disabled = false;
+        btn.textContent = "Relancer le moteur";
+        toast(
+          online
+            ? "Moteur de nouveau en ligne."
+            : "Le moteur n'est pas revenu — vérifie le service.",
+        );
+      }
+    }, 3000);
+  } catch (_) {
+    toast("Échec du redémarrage.");
+    btn.disabled = false;
+    btn.textContent = "Relancer le moteur";
+  }
+}
+
+function loadSettings() {
+  loadEngine();
+  loadAgents();
+  loadMcp();
+  loadAgentFiles();
+}
+
+function initSettings() {
+  $$(".settings-tab").forEach((t) =>
+    t.addEventListener("click", () => {
+      $$(".settings-tab").forEach((x) =>
+        x.classList.toggle("is-active", x === t),
+      );
+      $$(".settings-panel").forEach((p) =>
+        p.classList.toggle("is-active", p.id === `panel-${t.dataset.stab}`),
+      );
+    }),
+  );
+  $("#agentsSave").addEventListener("click", saveAgents);
+  $("#agentsReload").addEventListener("click", loadAgents);
+  $("#mcpSave").addEventListener("click", saveMcp);
+  $("#mcpReload").addEventListener("click", loadMcp);
+  $("#engineRestart").addEventListener("click", restartEngine);
+  $("#engineRefresh").addEventListener("click", loadEngine);
+  $("#agentNew").addEventListener("click", newAgent);
+  $("#agentSave").addEventListener("click", saveAgent);
+  $("#agentDelete").addEventListener("click", deleteAgent);
+  $("#agentCancel").addEventListener("click", () => { $("#agentEditorWrap").hidden = true; });
+  engine.timer = setInterval(() => {
+    if (
+      document.body.dataset.mode === "live" &&
+      $("#view-settings").classList.contains("is-active")
+    )
+      loadEngine();
+  }, 15000);
+}
+
+/* ---------- Réglages : fichiers d'agents ---------- */
+let EDIT_AGENT = null;
+
+async function loadAgentFiles() {
+  if (!LIVE) return;
+  try {
+    const d = await api.get("config/agent-files");
+    $("#agentFilesPath").textContent = d.dir || "";
+    renderAgentCards(d.agents || []);
+  } catch (_) {
+    setStatus("agentFilesStatus", "échec du chargement", "err");
+  }
+}
+
+function renderAgentCards(agents) {
+  const box = $("#agentCards");
+  if (!agents.length) {
+    box.innerHTML = `<div class="mcp-empty">Aucun agent perso.</div>`;
+    return;
+  }
+  box.innerHTML = agents
+    .map(
+      (a) => `
+      <div class="agent-card" data-name="${esc(a.name)}">
+        <div class="agent-card-head">
+          <strong>${esc(a.name)}</strong>
+          <span class="mcp-badge">${esc(a.mode || "subagent")}</span>
+          <button class="ghost-btn agent-card-edit" data-edit="${esc(a.name)}">Éditer</button>
+        </div>
+        ${a.description ? `<div class="mcp-detail">${esc(a.description)}</div>` : ""}
+      </div>`,
+    )
+    .join("");
+  box.querySelectorAll("[data-edit]").forEach((b) =>
+    b.addEventListener("click", () => editAgent(b.dataset.edit)),
+  );
+}
+
+async function editAgent(name) {
+  if (!LIVE) return;
+  try {
+    const d = await api.get(`config/agent-file?name=${encodeURIComponent(name)}`);
+    EDIT_AGENT = name;
+    $("#agentEditName").textContent = d.path || name;
+    $("#agentEditor").value = d.text || "";
+    $("#agentEditorWrap").hidden = false;
+    $("#agentDelete").hidden = false;
+  } catch (_) {
+    toast("Chargement impossible.");
+  }
+}
+
+function newAgent() {
+  EDIT_AGENT = "";
+  $("#agentEditName").textContent = "nouvel agent";
+  $("#agentEditor").value =
+    "---\ndescription: Ce que fait cet agent\nmode: subagent\n---\n\nTu es…\n";
+  $("#agentEditorWrap").hidden = false;
+  $("#agentDelete").hidden = true;
+}
+
+async function saveAgent() {
+  let name = (EDIT_AGENT || "").trim();
+  if (!name) {
+    const chosen = window.prompt("Nom de l'agent (a-z, 0-9, - _) :", "");
+    if (!chosen) return;
+    EDIT_AGENT = chosen.trim().toLowerCase();
+  }
+  setStatus("agentFilesStatus", "enregistrement…");
+  try {
+    await api.post("config/agent-file", { name: EDIT_AGENT, text: $("#agentEditor").value });
+    setStatus("agentFilesStatus", "enregistré", "ok");
+    toast("Agent enregistré. Relance le moteur pour l'utiliser.");
+    $("#agentEditorWrap").hidden = true;
+    loadAgentFiles();
+  } catch (_) {
+    setStatus("agentFilesStatus", "échec", "err");
+  }
+}
+
+async function deleteAgent() {
+  if (!EDIT_AGENT) return;
+  if (!window.confirm(`Supprimer l'agent « ${EDIT_AGENT} » ?`)) return;
+  try {
+    await api.post("config/agent-file/delete", { name: EDIT_AGENT });
+    toast("Agent supprimé.");
+    $("#agentEditorWrap").hidden = true;
+    loadAgentFiles();
+  } catch (_) {
+    toast("Échec de la suppression.");
   }
 }
 
@@ -1588,6 +1900,7 @@ $("#paletteResults").addEventListener("click", (e) => {
 });
 
 welcome();
+initSettings();
 
 /* ---------- Chargement ---------- */
 async function loadLive() {
